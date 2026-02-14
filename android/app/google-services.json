@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "76242713800",
+    "project_id": "committee-pay-app",
+    "storage_bucket": "committee-pay-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:76242713800:android:7d857efbe8fee05e3ff9fd",
+        "android_client_info": {
+          "package_name": "com.example.committee_pay_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDpICC9ofXbg4c7lpF-ImulDMeeqpHC7yU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
