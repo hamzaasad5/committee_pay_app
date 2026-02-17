@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -176,28 +178,45 @@ class _AddCommitteeScreenState extends State<AddCommitteeScreen> {
 
     final provider = context.read<CommitteesProvider>();
 
-    final startDate =
-    _type == CommitteeType.monthly ? _startMonth! : _dailyStartDate!;
+    final startDate = _type == CommitteeType.monthly ? _startMonth! : _dailyStartDate!;
     final endDate = _type == CommitteeType.monthly ? _endMonth! : _dailyEndDate!;
 
+    // Generate unique committee code
+    final committeeCode = generateCommitteeCode();
+
+    final creatorId = widget.adminId;
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.adminId)
+        .get();
+
+    final creatorName = userDoc.exists
+        ? (userDoc.data()?['name'] ?? 'Unknown') // 'name' field in your Users collection
+        : 'Unknown';
+
+    // Create committee in provider
     final id = await provider.addCommittee(
       name: _nameController.text,
-      monthlyAmount: _calculatedTotal!,
-      memberPhones: [],
+      monthlyAmount: int.parse(_amountController.text),
+      memberPhones: [], // Add invited members if needed
       startMonth: startDate,
       endMonth: endDate,
-      adminId: widget.adminId,
       type: _type == CommitteeType.monthly ? "monthly" : "daily",
       totalMembers: int.parse(_membersController.text),
-      totalAmount: _calculatedTotal!,
+      totalAmount: _calculatedTotal ?? 0,
+      committeeCode: committeeCode,
+      creatorId: creatorId,
+      creatorName: creatorName,
     );
 
     if (id != null) {
-      _generatedLink = "https://yourapp.com/invite/$id";
+      setState(() => _generatedLink = committeeCode);
     }
 
     setState(() => _isCreating = false);
   }
+
+
 
   // ---------------------------
   // UI
@@ -389,4 +408,15 @@ class _AddCommitteeScreenState extends State<AddCommitteeScreen> {
       ),
     );
   }
+}
+
+
+
+String generateCommitteeCode() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  final random = List.generate(5, (index) {
+    final i = DateTime.now().millisecondsSinceEpoch + index;
+    return chars[i % chars.length];
+  }).join();
+  return "CT-$random";
 }

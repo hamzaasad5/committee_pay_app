@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -12,31 +13,19 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
+  final TextEditingController _joinCodeController = TextEditingController();
+  bool _isJoining = false;
 
   // Tab filter
   String _selectedFilter = "Today";
 
   @override
-  void initState() {
-    super.initState();
-
-    // _controller = AnimationController(
-    //   vsync: this,
-    //   duration: const Duration(seconds: 5),
-    // )..repeat(); // infinite spinning
-    //
-    // _animation = Tween<double>(begin: 0, end: 2 * pi).animate(_controller);
-  }
-
-  @override
   void dispose() {
-    _controller.dispose();
+    _joinCodeController.dispose();
     super.dispose();
   }
 
-  // Filter query based on selected filter
+  // Firebase Activity Query
   Query getActivityQuery() {
     final now = DateTime.now();
     DateTime start;
@@ -48,10 +37,11 @@ class _HomeScreenState extends State<HomeScreen>
         end = start.add(const Duration(days: 1));
         break;
       case "Yesterday":
-        start = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
+        start =
+            DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
         end = start.add(const Duration(days: 1));
         break;
-      default: // "All"
+      default:
         start = DateTime(2000);
         end = now.add(const Duration(days: 1));
     }
@@ -61,6 +51,122 @@ class _HomeScreenState extends State<HomeScreen>
         .where("timestamp", isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .where("timestamp", isLessThan: Timestamp.fromDate(end))
         .orderBy("timestamp", descending: true);
+  }
+
+  // Fetch actual user phone number from Firestore
+  Future<String?> getUserPhone(String userId) async {
+    try {
+      final doc =
+      await FirebaseFirestore.instance.collection('users').doc(userId).get();
+      if (doc.exists) {
+        return doc.data()?['phone'] as String?;
+      }
+    } catch (e) {
+      debugPrint("Error fetching user phone: $e");
+    }
+    return null;
+  }
+
+  // 🔥 JOIN COMMITTEE FUNCTION
+  Future<void> joinCommittee({
+    required String userId,
+    required String userName,
+    required String userPhone,
+  }) async {
+    final code = _joinCodeController.text.trim();
+
+    if (code.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter a committee code")),
+      );
+      return;
+    }
+
+    setState(() => _isJoining = true);
+
+    try {
+      // Find committee by code
+      final query = await FirebaseFirestore.instance
+          .collection("committees")
+          .where("committeeCode", isEqualTo: code)
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Invalid committee code")),
+        );
+        setState(() => _isJoining = false);
+        return;
+      }
+
+      final doc = query.docs.first;
+      final committeeId = doc.id;
+
+      // Get current committee data
+      final committeeData = doc.data();
+
+      // Update membersMap with user UID
+      Map<String, dynamic> membersMap =
+      Map<String, dynamic>.from(committeeData["membersMap"] ?? {});
+      membersMap[userId] = true;
+
+      // Update members list
+      List members = List.from(committeeData["members"] ?? []);
+      bool alreadyMember =
+      members.any((m) => m["uid"] == userId || m["phone"] == userPhone);
+
+      if (!alreadyMember) {
+        members.add({
+          "name": userName,
+          "phone": userPhone,
+          "uid": userId,
+          "status": "Joined",
+          "payments": {},
+        });
+      }
+
+      // Initialize payments if not exists
+      Map<String, dynamic> membersPayments =
+      Map<String, dynamic>.from(committeeData["membersPayments"] ?? {});
+      if (!membersPayments.containsKey(userId)) {
+        DateTime startMonth = (committeeData["startMonth"] as Timestamp).toDate();
+        DateTime endMonth = (committeeData["endMonth"] as Timestamp).toDate();
+
+        Map<String, String> payments = {};
+        DateTime temp = DateTime(startMonth.year, startMonth.month);
+        while (!temp.isAfter(endMonth)) {
+          String key = "${temp.year}-${temp.month.toString().padLeft(2, '0')}";
+          payments[key] = "Pending";
+          temp = DateTime(temp.year, temp.month + 1);
+        }
+        membersPayments[userId] = payments;
+      }
+
+      // Update Firestore
+      await FirebaseFirestore.instance
+          .collection("committees")
+          .doc(committeeId)
+          .update({
+        "membersMap": membersMap,
+        "members": members,
+        "membersPayments": membersPayments,
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Successfully joined committee: ${committeeData["name"]}"),
+        ),
+      );
+
+      _joinCodeController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    }
+
+    setState(() => _isJoining = false);
   }
 
   @override
@@ -76,27 +182,84 @@ class _HomeScreenState extends State<HomeScreen>
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Animated spinning Rupee icon
-          // SizedBox(
-          //   height: 200,
-          //   child: Center(
-          //     child: AnimatedBuilder(
-          //       animation: _animation,
-          //       builder: (context, child) {
-          //         return Transform.rotate(
-          //           angle: _animation.value,
-          //           child: child,
-          //         );
-          //       },
-          //       child: Icon(
-          //         Icons.currency_rupee,
-          //         size: 100,
-          //         color: ThemeConstants.primaryColor,
-          //       ),
-          //     ),
-          //   ),
-          // ),
-          // const SizedBox(height: 24),
+          const SizedBox(height: 10),
+
+          // 🔥 JOIN COMMITTEE SECTION
+          Text(
+            "Enter your code to join your committee",
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.8),
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white24),
+            ),
+            child: TextField(
+              controller: _joinCodeController,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: "Enter committee code",
+                hintStyle: TextStyle(color: Colors.white54),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          ElevatedButton(
+            onPressed: _isJoining
+                ? null
+                : () async {
+              final user = FirebaseAuth.instance.currentUser;
+              if (user == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("No logged-in user found.")),
+                );
+                return;
+              }
+
+              final userId = user.uid;
+              final userName = user.displayName ?? "No Name";
+
+              // Fetch actual phone from Firestore
+              final userPhone = await getUserPhone(userId);
+              if (userPhone == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("User phone not found.")),
+                );
+                return;
+              }
+
+              await joinCommittee(
+                userId: userId,
+                userName: userName,
+                userPhone: userPhone,
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ThemeConstants.primaryColor,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: _isJoining
+                ? const CircularProgressIndicator(color: Colors.white)
+                : const Text(
+              "Join Committee",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+
+          const SizedBox(height: 24),
 
           // Quick Action Cards
           GridView(
@@ -135,28 +298,21 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ],
           ),
-          const SizedBox(height: 24),
 
-          // Inspirational Text / Banner
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: ThemeConstants.primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Text(
-              "💡 Keep track of your committees and payments seamlessly with RupeeShare!",
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: ThemeConstants.primaryColor,
-              ),
-              textAlign: TextAlign.center,
+          const SizedBox(height: 30),
+
+          // Activity Title
+          Text(
+            "Recent Activity",
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.9),
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 10),
 
-          // Activity Filters
+          // Filters
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: ["Today", "Yesterday", "All"].map((filter) {
@@ -170,38 +326,35 @@ class _HomeScreenState extends State<HomeScreen>
                   });
                 },
                 selectedColor: ThemeConstants.primaryColor,
-                backgroundColor: ThemeConstants.primaryColor.withOpacity(0.1),
+                backgroundColor: Colors.white10,
                 labelStyle: TextStyle(
-                  color: isSelected ? Colors.white : ThemeConstants.primaryColor,
-                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : Colors.white70,
                 ),
               );
             }).toList(),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
-          // Firestore Activity List
+          // Activity Stream
           StreamBuilder<QuerySnapshot>(
             stream: getActivityQuery().snapshots(),
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              if (!snapshot.hasData) {
                 return const Center(
-                  child: CircularProgressIndicator(
-                    color: ThemeConstants.primaryColor,
-                  ),
-                );
-              }
-
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return const Center(
-                  child: Text(
-                    "No activity found.",
-                    style: TextStyle(color: Colors.grey),
-                  ),
+                  child: CircularProgressIndicator(color: Colors.white),
                 );
               }
 
               final docs = snapshot.data!.docs;
+
+              if (docs.isEmpty) {
+                return const Center(
+                  child: Text(
+                    "No activity found.",
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                );
+              }
 
               return ListView.builder(
                 shrinkWrap: true,
@@ -209,24 +362,27 @@ class _HomeScreenState extends State<HomeScreen>
                 itemCount: docs.length,
                 itemBuilder: (context, index) {
                   final activity = docs[index].data() as Map<String, dynamic>;
-                  final type = activity["type"] ?? "Activity";
-                  final details = activity["details"] ?? "";
-                  final timestamp = (activity["timestamp"] as Timestamp?)?.toDate() ?? DateTime.now();
+                  final timestamp = (activity["timestamp"] as Timestamp).toDate();
 
                   return Card(
+                    color: Colors.white10,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    elevation: 2,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     child: ListTile(
                       leading: Icon(
-                        type == "payment" ? Icons.payment : Icons.add,
-                        color: type == "payment"
-                            ? Colors.green
-                            : ThemeConstants.primaryColor,
+                        activity["type"] == "payment"
+                            ? Icons.payment
+                            : Icons.add_circle,
+                        color: ThemeConstants.primaryColor,
                       ),
-                      title: Text(details),
+                      title: Text(
+                        activity["details"] ?? "",
+                        style: const TextStyle(color: Colors.white),
+                      ),
                       subtitle: Text(
-                        "${timestamp.day}/${timestamp.month}/${timestamp.year} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}",
+                        "${timestamp.day}/${timestamp.month}/${timestamp.year}",
+                        style: const TextStyle(color: Colors.white70),
                       ),
                     ),
                   );
@@ -240,7 +396,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
-// Quick Action Card Widget
 class _QuickActionCard extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -260,17 +415,24 @@ class _QuickActionCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: color.withOpacity(0.1),
+        color: color.withOpacity(0.12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 36, color: color),
               const SizedBox(height: 8),
-              Text(title,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+              Text(
+                title,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              )
             ],
           ),
         ),

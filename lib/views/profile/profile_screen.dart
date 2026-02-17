@@ -14,23 +14,21 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
-  bool _dataLoaded = false;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final provider = context.read<ProfileProvider>();
+  void initState() {
+    super.initState();
 
-    // Fetch profile if not already loaded
-    if (!_dataLoaded) {
-      provider.fetchUserProfile().then((_) {
-        if (provider.userData != null) {
-          _nameController.text = provider.userData!["name"] ?? "";
-          _phoneController.text = provider.userData!["phone"] ?? "";
-        }
-      });
-      _dataLoaded = true;
-    }
+    // Safe way to call provider after build
+    Future.microtask(() async {
+      final provider = context.read<ProfileProvider>();
+      await provider.fetchUserProfile();
+
+      if (provider.userData != null) {
+        _nameController.text = provider.userData!["name"] ?? "";
+        _phoneController.text = provider.userData!["phone"] ?? "";
+      }
+    });
   }
 
   @override

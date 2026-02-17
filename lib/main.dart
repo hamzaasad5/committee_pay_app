@@ -39,7 +39,7 @@ class CommitteeApp extends StatelessWidget {
         home: const AuthGate(),
         routes: {
           "/signup": (context) => const SignInScreen(), // fallback if needed
-          "/dashboard": (context) => const BottomNavBar(),
+          "/bottom_nav_bar": (context) => const BottomNavBar(),
         },
       ),
     );
@@ -52,24 +52,33 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    print("🔄 AuthGate build triggered... waiting for FirebaseAuth stream");
+
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
+        print("📡 Auth state changed → Connection: ${snapshot.connectionState}");
+        print("📡 Snapshot hasData: ${snapshot.hasData}");
+
         // 🔁 Waiting for Firebase
         if (snapshot.connectionState == ConnectionState.waiting) {
+          print("⏳ Firebase still connecting...");
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        // 🔐 User logged in → Go to BottomNavBar
+        // 🔐 User logged in
         if (snapshot.hasData && snapshot.data != null) {
+          print("🔓 User is logged in → UID: ${snapshot.data!.uid}");
           return const BottomNavBar();
         }
 
-        // 🚪 User NOT logged in → Show Sign In screen
+        // 🚪 Not logged in
+        print("🚪 No user found → Showing Sign In screen");
         return const SignInScreen();
       },
     );
   }
 }
+

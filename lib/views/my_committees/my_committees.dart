@@ -1,10 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../constants/app_colors.dart';
 import '../../providers/committees_provider.dart';
 import 'add_committee_screen.dart';
-import 'committee_details_screen.dart';
+import 'add_user_payment.dart';
+import 'committee_members_screen.dart';
+import 'winners_list_screen.dart';
 
 class MyCommitteesScreen extends StatefulWidget {
   final String userId;
@@ -19,11 +22,12 @@ class _MyCommitteesScreenState extends State<MyCommitteesScreen> {
   @override
   void initState() {
     super.initState();
-
-    // Fetch user committees once
+    print("commitees fetching");
+    print("useridd: ${widget.userId}");
     Future.microtask(() {
       context.read<CommitteesProvider>().fetchUserCommittees(widget.userId);
     });
+    print("commettees fetched");
   }
 
   @override
@@ -42,20 +46,20 @@ class _MyCommitteesScreenBody extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
+        title: const Text(
           "My Committees",
-          style: TextStyle(
-            color: ThemeConstants.textPrimaryLight,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.add, color: ThemeConstants.primaryColor),
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => AddCommitteeScreen(adminId: userId)),
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AddCommitteeScreen(adminId: userId),
+                ),
               );
             },
           ),
@@ -69,8 +73,11 @@ class _MyCommitteesScreenBody extends StatelessWidget {
 
           if (provider.error != null) {
             return Center(
-                child: Text("Error: ${provider.error}",
-                    style: const TextStyle(color: Colors.red)));
+              child: Text(
+                "Error: ${provider.error}",
+                style: const TextStyle(color: Colors.red),
+              ),
+            );
           }
 
           if (provider.committees.isEmpty) {
@@ -89,10 +96,7 @@ class _MyCommitteesScreenBody extends StatelessWidget {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    "Create or join a committee to get started",
-                    textAlign: TextAlign.center,
-                  ),
+                  const Text("Create or join a committee to get started"),
                 ],
               ),
             );
@@ -101,96 +105,220 @@ class _MyCommitteesScreenBody extends StatelessWidget {
           return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: provider.committees.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            separatorBuilder: (_, __) => const SizedBox(height: 14),
             itemBuilder: (context, index) {
               final committee = provider.committees[index];
 
               // Dates
-              final startMonth = committee["startMonth"] as Timestamp?;
-              final endMonth = committee["endMonth"] as Timestamp?;
-
+              final start = committee["startMonth"] as Timestamp?;
+              final end = committee["endMonth"] as Timestamp?;
               String dateRange = "";
-              if (startMonth != null && endMonth != null) {
+              if (start != null && end != null) {
+                final s = start.toDate();
+                final e = end.toDate();
                 dateRange =
-                "${startMonth.toDate().month}/${startMonth.toDate().year} - ${endMonth.toDate().month}/${endMonth.toDate().year}";
+                "${s.day}/${s.month}/${s.year} → ${e.day}/${e.month}/${e.year}";
               }
 
               final status = committee["status"] ?? "Inactive";
               final isActive = status == "Active";
 
-              return InkWell(
-                onTap: () {
-                  final committeeId = committee["id"]; // doc id
-                  if (committeeId != null) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => CommitteeDetailsScreen(
-                          committeeId: committeeId,
-                          currentUserId: userId,
+              final committeeCode = committee["committeeCode"] ?? "N/A";
+              final adminName = committee["adminName"] ?? "Unknown";
+              final type = committee["type"] ?? "monthly";
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: ThemeConstants.inputBorderDark,
+                  borderRadius:
+                  BorderRadius.circular(ThemeConstants.borderRadiusLarge),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      offset: const Offset(0, 3),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // NAME + STATUS + Popup Menu
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            committee["name"],
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
-                      ),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Committee ID not found")),
-                    );
-                  }
-                },
-                borderRadius:
-                BorderRadius.circular(ThemeConstants.borderRadiusMedium),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: ThemeConstants.cardLight,
-                    borderRadius:
-                    BorderRadius.circular(ThemeConstants.borderRadiusMedium),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        offset: const Offset(0, 2),
-                        blurRadius: 6,
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Top row: name and status chip
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              committee["name"],
-                              style: ThemeConstants.titleLarge,
+                        Row(
+                          children: [
+                            // Status Chip
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? ThemeConstants.primaryColor
+                                    .withOpacity(0.15)
+                                    : Colors.redAccent.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                status,
+                                style: TextStyle(
+                                  color: isActive
+                                      ? ThemeConstants.primaryColor
+                                      : Colors.redAccent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
-                          ),
-                          Chip(
-                            label: Text(status),
-                            backgroundColor: isActive
-                                ? ThemeConstants.primaryColor.withOpacity(0.15)
-                                : ThemeConstants.accentColor.withOpacity(0.15),
-                            labelStyle: TextStyle(
-                              color: isActive
-                                  ? ThemeConstants.primaryColor
-                                  : ThemeConstants.accentColor,
-                              fontWeight: FontWeight.w600,
+                            const SizedBox(width: 6),
+                            // Popup Menu
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert),
+                              onSelected: (value) {
+                                if (value == "members") {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CommitteeMembersScreen(
+                                        committeeId: committee["id"],
+                                      ),
+                                    ),
+                                  );
+                                }
+                                if (value == "winner") {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CommitteeWinnerScreen(
+                                        committeeId: committee["id"],
+                                      ),
+                                    ),
+                                  );
+                                }
+                                if (value == "add_payment") {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => AddUserPayment(
+                                        committeeId: committee["id"],
+                                        currentUserId: userId,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              itemBuilder: (context) {
+                                // Always show Members & Winner
+                                final items = <PopupMenuEntry<String>>[
+                                  const PopupMenuItem(
+                                    value: "members",
+                                    child: Text("See Members"),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: "winner",
+                                    child: Text("See Winner"),
+                                  ),
+                                ];
+
+                                // Show Add Payment only for creator/admin
+                                if (userId == (committee["adminId"] ?? "")) {
+                                  items.add(
+                                    const PopupMenuItem(
+                                      value: "add_payment",
+                                      child: Text("Add payment for user"),
+                                    ),
+                                  );
+                                }
+
+                                return items;
+                              },
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
+
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // CREATED BY
+                    Text(
+                      "Created by: $adminName",
+                      style: ThemeConstants.bodyMedium,
+                    ),
+                    const SizedBox(height: 6),
+
+                    // MEMBERS + PER MONTH
+                    Text(
+                      "${committee["totalMembers"]} Members • "
+                          "${type == "monthly" ? "Rs ${committee["monthlyAmount"]}/month" : "Rs ${committee["monthlyAmount"]}/day"}",
+                      style: ThemeConstants.bodyMedium,
+                    ),
+                    const SizedBox(height: 6),
+
+                    // DATES
+                    if (dateRange.isNotEmpty)
                       Text(
-                        "${committee["members"].length} Members • Rs ${committee["monthlyAmount"]}/month",
+                        "Duration: $dateRange",
                         style: ThemeConstants.bodyMedium,
                       ),
-                      if (dateRange.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(dateRange, style: ThemeConstants.bodyMedium),
+                    const SizedBox(height: 12),
+                    const Divider(),
+                    const SizedBox(height: 12),
+
+                    // CODE + COPY BUTTON
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Committee Code:",
+                                style: TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      committeeCode,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        letterSpacing: 1.2,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.copy),
+                                    onPressed: () {
+                                      Clipboard.setData(
+                                          ClipboardData(text: committeeCode));
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                            content: Text("Code copied!")),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ),
               );
             },

@@ -3,6 +3,8 @@ import 'package:committee_pay_app/views/auth/signup.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../constants/app_colors.dart';
+import '../../utils/app_local_storage.dart';
+import '../../widgets/bottom_nav_bar.dart';
 import 'forgot_password_screen.dart';
 
 class SignInScreen extends StatefulWidget {
@@ -34,12 +36,8 @@ class _SignInScreenState extends State<SignInScreen> {
                   style: ThemeConstants.headlineMedium),
 
               const SizedBox(height: 8),
-              Text("Sign in to continue",
-                  style: ThemeConstants.bodyMedium),
-
+              Text("Sign in to continue", style: ThemeConstants.bodyMedium),
               const SizedBox(height: 40),
-
-              // Email Input
               TextField(
                 controller: emailCtrl,
                 keyboardType: TextInputType.emailAddress,
@@ -48,10 +46,7 @@ class _SignInScreenState extends State<SignInScreen> {
                   prefixIcon: Icon(Icons.email),
                 ),
               ),
-
               const SizedBox(height: 16),
-
-              // Password
               TextField(
                 controller: passCtrl,
                 obscureText: obscurePass,
@@ -67,9 +62,7 @@ class _SignInScreenState extends State<SignInScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 10),
-
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
@@ -84,10 +77,8 @@ class _SignInScreenState extends State<SignInScreen> {
                   child: const Text("Forgot Password?"),
                 ),
               ),
-
               const SizedBox(height: 30),
-
-              // Sign In Button
+              /// Sign In Button
               SizedBox(
                 width: double.infinity,
                 height: 55,
@@ -95,18 +86,39 @@ class _SignInScreenState extends State<SignInScreen> {
                   onPressed: auth.loading
                       ? null
                       : () async {
+                    final email = emailCtrl.text.trim();
+                    final password = passCtrl.text.trim();
                     final error = await auth.loginWithEmail(
-                      email: emailCtrl.text.trim(),
-                      password: passCtrl.text.trim(),
+                      email: email,
+                      password: password,
                     );
-
                     if (error != null) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text(error)),
                       );
+                      return;
                     }
-                    // no navigation needed, AuthGate handles login
+                    print("✅ Login successful, fetching stored userId...");
+
+                    /// Wait for the userId to be saved in LocalStorage
+                    final userId = await LocalStorage.getUserId();
+                    if (userId == null || userId.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text("Error fetching userId. Please try again.")
+                        ),
+                      );
+                      return;
+                    }
+                    print("🔹 userId fetched: $userId");
+                    /// Navigate only after userId is available
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const BottomNavBar()),
+                    );
                   },
+
+
                   child: auth.loading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : const Text("Sign In"),
@@ -115,7 +127,7 @@ class _SignInScreenState extends State<SignInScreen> {
 
               const SizedBox(height: 20),
 
-              // Go to Signup
+              /// Go to Signup
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [

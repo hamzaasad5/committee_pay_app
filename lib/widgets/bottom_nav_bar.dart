@@ -2,11 +2,12 @@ import 'package:committee_pay_app/providers/committees_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants/app_colors.dart';
+import '../utils/app_local_storage.dart';
 import '../views/home/home_screen.dart';
+import '../views/member_assigment/widgets/member_assignment_home.dart';
 import '../views/my_committees/my_committees.dart';
 import '../views/profile/profile_screen.dart';
 import '../providers/auth_provider.dart';
-import '../views/winner_announcement/winner_announcement_screen.dart';
 
 class BottomNavBar extends StatefulWidget {
   const BottomNavBar({super.key});
@@ -17,36 +18,46 @@ class BottomNavBar extends StatefulWidget {
 
 class _BottomNavBarState extends State<BottomNavBar> {
   int _currentIndex = 0;
+  String? _userId;
+  bool _loadingUserId = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserId();
+  }
+
+  Future<void> _fetchUserId() async {
+    final authProvider = context.read<AuthProvider>();
+    String? userId = authProvider.currentUser?.uid;
+
+    if (userId == null) {
+      userId = await LocalStorage.getUserId();
+    }
+
+    setState(() {
+      _userId = userId;
+      _loadingUserId = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Get current user ID from AuthProvider
-    final userId = context.watch<AuthProvider>().currentUserId ?? "";
-
-    // Get committees list from CommitteesProvider
-    final committees = context.watch<CommitteesProvider>().committees;
-
-    // Choose a committeeId for winner announcement screen
-    // For example, first committee in the list if available
-    String? committeeId;
-    if (committees.isNotEmpty) {
-      committeeId = committees[0]["id"];
+    if (_loadingUserId) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
-    final List<Widget> _screens = [
+    final List<Widget> screens = [
       const HomeScreen(),
-      MyCommitteesScreen(userId: userId),
-      // Pass committeeId only if available, else show empty screen
-      committeeId != null
-          ? WinnerAnnouncementScreen(committeeId: committeeId)
-          : const Center(
-        child: Text("No committee available for announcements"),
-      ),
+      MyCommitteesScreen(userId: _userId ?? ""),
+      const MemberAssignmentHome(),
       const ProfileScreen(),
     ];
 
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         selectedItemColor: ThemeConstants.primaryColor,

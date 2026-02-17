@@ -20,116 +20,120 @@ class _SignupScreenState extends State<SignupScreen> {
   bool obscurePass = true;
 
   @override
-  Widget build(BuildContext context) {
-    final auth = Provider.of<AuthProvider>(context);
+  void dispose() {
+    nameCtrl.dispose();
+    emailCtrl.dispose();
+    passCtrl.dispose();
+    phoneCtrl.dispose();
+    super.dispose();
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 20),
-              Text("Create Account", style: ThemeConstants.headlineMedium),
-              const SizedBox(height: 8),
-              Text("Enter your details to continue", style: ThemeConstants.bodyMedium),
-              const SizedBox(height: 40),
-
-              // Name
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Full Name",
-                  prefixIcon: Icon(Icons.person),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Email
-              TextField(
-                controller: emailCtrl,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: "Email Address",
-                  prefixIcon: Icon(Icons.email),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Phone
-              TextField(
-                controller: phoneCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: "Phone Number",
-                  prefixIcon: Icon(Icons.phone),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Password
-              TextField(
-                controller: passCtrl,
-                obscureText: obscurePass,
-                decoration: InputDecoration(
-                  labelText: "Password",
-                  prefixIcon: const Icon(Icons.lock),
-                  suffixIcon: IconButton(
-                    icon: Icon(obscurePass ? Icons.visibility : Icons.visibility_off),
-                    onPressed: () => setState(() => obscurePass = !obscurePass),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 30),
-
-              // Signup Button
-              SizedBox(
-                width: double.infinity,
-                height: 55,
-                child: ElevatedButton(
-                  onPressed: auth.loading
-                      ? null
-                      : () async {
-                    final error = await auth.signUpWithEmail(
-                      name: nameCtrl.text.trim(),
-                      email: emailCtrl.text.trim(),
-                      password: passCtrl.text.trim(),
-                      phone: phoneCtrl.text.trim(),
-                    );
-
-                    if (error != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error)),
-                      );
-                    } else {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (_) => const BottomNavBar()),
-                      );
-                    }
-                  },
-                  child: auth.loading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text("Sign Up"),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Already have account
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+        child: Consumer<AuthProvider>(
+          builder: (context, auth, _) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Already have an account?"),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("Sign In"),
+                  const SizedBox(height: 20),
+                  Text("Create Account", style: ThemeConstants.headlineMedium),
+                  const SizedBox(height: 8),
+                  Text("Enter your details to continue", style: ThemeConstants.bodyMedium),
+                  const SizedBox(height: 40),
+
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: "Full Name",
+                      prefixIcon: Icon(Icons.person),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: "Email Address",
+                      prefixIcon: Icon(Icons.email),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: "Phone Number",
+                      prefixIcon: Icon(Icons.phone),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: passCtrl,
+                    obscureText: obscurePass,
+                    decoration: InputDecoration(
+                      labelText: "Password",
+                      prefixIcon: const Icon(Icons.lock),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscurePass ? Icons.visibility : Icons.visibility_off),
+                        onPressed: () => setState(() => obscurePass = !obscurePass),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: auth.loading
+                          ? null
+                          : () async {
+                        final error = await auth.signUpWithEmail(
+                          name: nameCtrl.text.trim(),
+                          email: emailCtrl.text.trim(),
+                          password: passCtrl.text.trim(),
+                          phone: phoneCtrl.text.trim(),
+                        );
+
+                        if (error != null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(error)),
+                          );
+                        } else {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (_) => const BottomNavBar()),
+                          );
+                        }
+                      },
+                      child: auth.loading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text("Sign Up"),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text("Already have an account?"),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text("Sign In"),
+                      ),
+                    ],
                   ),
                 ],
-              )
-            ],
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
