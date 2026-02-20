@@ -85,4 +85,5 @@ class DefaultFirebaseOptions {
     storageBucket: 'committee-pay-app.firebasestorage.app',
     measurementId: 'G-BYTXMNLGHH',
   );
+
 }

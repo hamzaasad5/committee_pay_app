@@ -32,7 +32,7 @@ class CommitteeApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ProfileProvider()),
       ],
       child: MaterialApp(
-        title: "Beesi",
+        title: "Committee App",
         debugShowCheckedModeBanner: false,
         theme: ThemeConstants.lightTheme,
         darkTheme: ThemeConstants.darkTheme,
