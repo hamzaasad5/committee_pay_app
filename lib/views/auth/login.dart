@@ -2,6 +2,7 @@ import 'package:committee_pay_app/providers/auth_provider.dart';
 import 'package:committee_pay_app/views/auth/signup.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../constants/app_colors.dart';
 import '../../utils/app_local_storage.dart';
 import '../../widgets/bottom_nav_bar.dart';
@@ -33,10 +34,10 @@ class _SignInScreenState extends State<SignInScreen> {
               const SizedBox(height: 20),
 
               Text("Welcome Back",
-                  style: ThemeConstants.headlineMedium),
+                  style: AppColors.headlineMedium),
 
               const SizedBox(height: 8),
-              Text("Sign in to continue", style: ThemeConstants.bodyMedium),
+              Text("Sign in to continue", style: AppColors.bodyMedium),
               const SizedBox(height: 40),
               TextField(
                 controller: emailCtrl,
@@ -143,8 +144,40 @@ class _SignInScreenState extends State<SignInScreen> {
                   ),
                 ],
               ),
+              ///   PRIVACY POLICY TEXT
+              Center(
+                child: Column(
+                  children: [
+                    const Text(
+                      "By signing in, you agree to our",
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 4),
+                    InkWell(
+                      onTap: () async {
+                        final url = Uri.parse("https://committee-pay-app.web.app/privacy-policy");
+                        if (await canLaunchUrl(url)) {
+                          await launchUrl(url, mode: LaunchMode.externalApplication);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Could not open Privacy Policy")),
+                          );
+                        }
+                      },
+                      child: const Text(
+                        "Privacy Policy",
+                        style: TextStyle(
+                          decoration: TextDecoration.underline,
+                          color: Colors.blue,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
-              const SizedBox(height: 30),
+              const SizedBox(height: 20),
             ],
           ),
         ),

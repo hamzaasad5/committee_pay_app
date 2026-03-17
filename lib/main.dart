@@ -34,8 +34,8 @@ class CommitteeApp extends StatelessWidget {
       child: MaterialApp(
         title: "Committee App",
         debugShowCheckedModeBanner: false,
-        theme: ThemeConstants.lightTheme,
-        darkTheme: ThemeConstants.darkTheme,
+        theme: AppColors.lightTheme,
+        darkTheme: AppColors.darkTheme,
         home: const AuthGate(),
         routes: {
           "/signup": (context) => const SignInScreen(), // fallback if needed

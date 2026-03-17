@@ -60,8 +60,8 @@ class _BottomNavBarState extends State<BottomNavBar> {
       body: screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        selectedItemColor: ThemeConstants.primaryColor,
-        unselectedItemColor: ThemeConstants.textSecondaryLight,
+        selectedItemColor: AppColors.primaryColor,
+        unselectedItemColor: AppColors.textSecondaryLight,
         type: BottomNavigationBarType.fixed,
         onTap: (index) {
           setState(() => _currentIndex = index);

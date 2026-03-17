@@ -40,9 +40,9 @@ class _SignupScreenState extends State<SignupScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 20),
-                  Text("Create Account", style: ThemeConstants.headlineMedium),
+                  Text("Create Account", style: AppColors.headlineMedium),
                   const SizedBox(height: 8),
-                  Text("Enter your details to continue", style: ThemeConstants.bodyMedium),
+                  Text("Enter your details to continue", style: AppColors.bodyMedium),
                   const SizedBox(height: 40),
 
                   TextField(
