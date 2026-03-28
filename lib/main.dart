@@ -7,15 +7,26 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:hive_flutter/hive_flutter.dart'; // ✅ ADD THIS
 
 import 'constants/app_colors.dart';
 import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 🔥 Firebase Init
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // 🔥 Hive Init
+  await Hive.initFlutter();
+
+  // ✅ Open boxes (VERY IMPORTANT)
+  await Hive.openBox('userBox');
+  await Hive.openBox('committeesBox');
+  await Hive.openBox('paymentsBox');
 
   runApp(const CommitteeApp());
 }
@@ -38,7 +49,7 @@ class CommitteeApp extends StatelessWidget {
         darkTheme: AppColors.darkTheme,
         home: const AuthGate(),
         routes: {
-          "/signup": (context) => const SignInScreen(), // fallback if needed
+          "/signup": (context) => const SignInScreen(),
           "/bottom_nav_bar": (context) => const BottomNavBar(),
         },
       ),
@@ -60,25 +71,19 @@ class AuthGate extends StatelessWidget {
         print("📡 Auth state changed → Connection: ${snapshot.connectionState}");
         print("📡 Snapshot hasData: ${snapshot.hasData}");
 
-        // 🔁 Waiting for Firebase
         if (snapshot.connectionState == ConnectionState.waiting) {
-          print("⏳ Firebase still connecting...");
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        // 🔐 User logged in
         if (snapshot.hasData && snapshot.data != null) {
           print("🔓 User is logged in → UID: ${snapshot.data!.uid}");
           return const BottomNavBar();
         }
 
-        // 🚪 Not logged in
-        print("🚪 No user found → Showing Sign In screen");
         return const SignInScreen();
       },
     );
   }
 }
-

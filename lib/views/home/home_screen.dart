@@ -27,8 +27,6 @@ class _HomeScreenState extends State<HomeScreen>
   User? _currentUser;
   UserModel? _userModel;
   bool _isLoading = true;
-
-  // List to store user's committees for payment selection
   List<Map<String, dynamic>> _userCommittees = [];
 
   @override
@@ -154,7 +152,6 @@ class _HomeScreenState extends State<HomeScreen>
       final query = await FirebaseFirestore.instance
           .collection("committees")
           .where("committeeCode", isEqualTo: code)
-          .where("isActive", isEqualTo: true)
           .limit(1)
           .get();
 

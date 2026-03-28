@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import '../utils/app_local_storage.dart';
 
@@ -9,13 +10,14 @@ class AuthProvider with ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   bool loading = false;
-  User? currentUser;
   bool logoutLoading = false;
+  User? currentUser;
 
   AuthProvider() {
     _auth.authStateChanges().listen((User? user) {
+      currentUser = user;
       print('🔥 Auth state changed in provider: ${user?.uid ?? 'No user'}');
-      notifyListeners(); // This will rebuild widgets listening to provider
+      notifyListeners();
     });
   }
 
@@ -28,9 +30,12 @@ class AuthProvider with ChangeNotifier {
     logoutLoading = value;
     notifyListeners();
   }
+
   String? get currentUserId => currentUser?.uid;
 
-  // SIGN UP WITH EMAIL + FIRESTORE
+  /// ========================
+  /// SIGN UP
+  /// ========================
   Future<String?> signUpWithEmail({
     required String name,
     required String email,
@@ -40,18 +45,18 @@ class AuthProvider with ChangeNotifier {
     try {
       _setLoading(true);
 
-      // 1️⃣ Create user in Firebase Auth
+      // Create user in Firebase Auth
       UserCredential cred = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      // 2️⃣ Update display name
+      // Update display name
       await cred.user?.updateDisplayName(name);
 
       currentUser = cred.user;
 
-      // 3️⃣ Add user document in Firestore
+      // Add user document in Firestore
       await _db.collection("users").doc(currentUser!.uid).set({
         "name": name,
         "email": email,
@@ -60,7 +65,17 @@ class AuthProvider with ChangeNotifier {
         "committees": [],
         "totalBalance": 0,
       });
+
+      // Save userId in local storage
       await LocalStorage.saveUserId(currentUser!.uid);
+
+      // =====================
+      // HIVE: Save user info offline
+      var userBox = Hive.box('userBox');
+      userBox.put('uid', currentUser!.uid);
+      userBox.put('name', name);
+      userBox.put('email', email);
+      userBox.put('phone', phone);
 
       _setLoading(false);
       return null;
@@ -73,52 +88,96 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // LOGIN WITH EMAIL
+  /// ========================
+  /// LOGIN
+  /// ========================
   Future<String?> loginWithEmail({
     required String email,
     required String password,
   }) async {
-    print("🔵 loginWithEmail() called");
-    print("📩 Email: $email");
-
     try {
       _setLoading(true);
-      print("🟢 Signing in Firebase user...");
 
       UserCredential cred = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      print("✅ Login successful → UID: ${cred.user?.uid}");
-
       currentUser = cred.user;
+
       if (currentUser != null) {
         await LocalStorage.saveUserId(currentUser!.uid);
+
+        // =====================
+        // HIVE: Save user info offline
+        var userBox = Hive.box('userBox');
+        userBox.put('uid', currentUser!.uid);
+        userBox.put('email', currentUser!.email ?? '');
+        userBox.put('name', currentUser!.displayName ?? '');
       }
+
       _setLoading(false);
       return null;
     } on FirebaseAuthException catch (e) {
-      print("❌ FirebaseAuthException during login: ${e.code} → ${e.message}");
       _setLoading(false);
       return e.message;
     } catch (e) {
-      print("❌ Unknown login error: $e");
       _setLoading(false);
       return "Something went wrong";
     }
   }
 
-  // LOGOUT
+  /// ========================
+  /// LOGOUT
+  /// ========================
   Future<void> logout() async {
-    _setLogoutLoading(true);
+    try {
+      _setLogoutLoading(true);
+      print('🔵 Starting logout process...');
 
-    await Future.delayed(const Duration(milliseconds: 800)); // 👌 Smooth UI
-    await _auth.signOut();
-    currentUser = null;
+      // 🔐 Firebase Sign Out
+      await _auth.signOut();
+      print('✓ Firebase sign out completed');
 
-    await LocalStorage.removeUserId();
+      // 👤 Clear user
+      currentUser = null;
+      print('✓ Current user cleared');
 
-    _setLogoutLoading(false);
+      // 💾 Clear Local Storage
+      await LocalStorage.removeUserId();
+      print('✓ User ID removed from local storage');
+
+      // 📦 Clear Hive Storage
+      try {
+        var userBox = Hive.box('userBox');
+        await userBox.clear();
+        print('✓ Hive user box cleared');
+      } catch (e) {
+        print('⚠️ Hive clear error: $e');
+      }
+
+      print('✅ Logout completed successfully');
+    } catch (e) {
+      print('❌ Logout error: $e');
+      rethrow; // important for UI handling
+    }
+
+    // ❗ DO NOT set loading false here
+    // Loader will be removed by navigation
+  }
+
+  /// ========================
+  /// OFFLINE SUPPORT: Get cached user info
+  /// ========================
+  Map<String, dynamic>? getCachedUser() {
+    var userBox = Hive.box('userBox');
+    if (userBox.isEmpty) return null;
+
+    return {
+      'uid': userBox.get('uid'),
+      'name': userBox.get('name'),
+      'email': userBox.get('email'),
+      'phone': userBox.get('phone'),
+    };
   }
 }

@@ -80,7 +80,19 @@ class CommitteesProvider extends ChangeNotifier {
       Map<String, bool> membersMap = {};
       Map<String, Map<String, dynamic>> membersPayments = {};
       List<Map<String, dynamic>> members = [];
+      List<String> allMemberIds = []; // Store all member IDs for chat
 
+      // Add creator
+      membersMap[creatorId] = true;
+      members.add({
+        "name": creatorName,
+        "uid": creatorId,
+        "status": "Joined",
+        "payments": {},
+      });
+      allMemberIds.add(creatorId);
+
+      // Add invited members
       for (var member in memberPhones) {
         String phone = member["phone"]!;
         String memberName = member["name"]!;
@@ -91,16 +103,10 @@ class CommitteesProvider extends ChangeNotifier {
           "status": "Pending",
           "payments": {},
         });
-      }
 
-      /// Add creator as member with "Joined" status
-      membersMap[creatorId] = true;
-      members.add({
-        "name": creatorName,
-        "uid": creatorId,
-        "status": "Joined",
-        "payments": {},
-      });
+        // Store phone for chat (will be resolved to user ID later)
+        allMemberIds.add(phone);
+      }
 
       final docRef = await _db.collection("committees").add({
         "name": name,
@@ -122,20 +128,30 @@ class CommitteesProvider extends ChangeNotifier {
         "createdAt": FieldValue.serverTimestamp(),
       });
 
+      // Create chat document for this committee
+      await _createChatDocument(
+        committeeId: docRef.id,
+        committeeName: name,
+        committeeImage: null, // Add committee image if available
+        creatorId: creatorId,
+        creatorName: creatorName,
+        members: allMemberIds,
+      );
+
       // Create activity for committee creation
       await FirebaseFirestore.instance.collection("activity").add({
         "userId": creatorId,
-        "type": "committee_created", // Changed to reflect committee creation
-        "committeeId": docRef.id, // Fixed: Added committee ID
-        "committeeName": name, // Fixed: Use the name variable directly
+        "type": "committee_created",
+        "committeeId": docRef.id,
+        "committeeName": name,
         "timestamp": Timestamp.now(),
-        "details": "Created committee: $name", // Fixed: Use name variable
+        "details": "Created committee: $name",
       });
 
-      // Optional: Create separate activity entries for invited members
+      // Create separate activity entries for invited members
       for (var member in memberPhones) {
         await FirebaseFirestore.instance.collection("activity").add({
-          "userId": member["phone"], // Using phone number as identifier
+          "userId": member["phone"],
           "type": "committee_invitation",
           "committeeId": docRef.id,
           "committeeName": name,
@@ -148,6 +164,159 @@ class CommitteesProvider extends ChangeNotifier {
     } catch (e) {
       print("❌ Error adding committee: $e");
       return null;
+    }
+  }
+
+// Helper method to create chat document
+  Future<void> _createChatDocument({
+    required String committeeId,
+    required String committeeName,
+    String? committeeImage,
+    required String creatorId,
+    required String creatorName,
+    required List<String> members,
+  }) async {
+    try {
+      // Create participants list with actual user IDs
+      // First, get user IDs for phone numbers if needed
+      List<String> participantIds = [];
+
+      for (var member in members) {
+        // Check if member is a phone number or user ID
+        if (member.contains('@') || member.length > 10) {
+          // It's likely an email or user ID
+          participantIds.add(member);
+        } else {
+          // It's a phone number, need to find user ID
+          final userDoc = await _db
+              .collection('users')
+              .where('phone', isEqualTo: member)
+              .limit(1)
+              .get();
+
+          if (userDoc.docs.isNotEmpty) {
+            participantIds.add(userDoc.docs.first.id);
+          } else {
+            // User not registered yet, store phone as temporary identifier
+            participantIds.add(member);
+          }
+        }
+      }
+
+      // Initialize unread counts for all participants
+      final Map<String, int> unreadCounts = {};
+      for (var participant in participantIds) {
+        unreadCounts[participant] = 0;
+      }
+
+      // Create the chat document
+      await _db.collection('committee_chats').doc(committeeId).set({
+        'committeeId': committeeId,
+        'committeeName': committeeName,
+        'committeeImage': committeeImage,
+        'participants': participantIds,
+        'participantNames': await _getParticipantNames(participantIds),
+        'createdAt': FieldValue.serverTimestamp(),
+        'createdBy': creatorId,
+        'createdByName': creatorName,
+        'lastMessage': 'Committee created. Start the conversation!',
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSender': creatorId,
+        'lastMessageSenderName': creatorName,
+        'unreadCounts': unreadCounts,
+        'status': 'active',
+      });
+
+      print('✅ Chat document created for committee: $committeeId');
+
+      // Create welcome message
+      await _createWelcomeMessage(committeeId, creatorId, creatorName, committeeName);
+
+    } catch (e) {
+      print('❌ Error creating chat document: $e');
+    }
+  }
+
+// Helper method to get participant names
+  Future<Map<String, String>> _getParticipantNames(List<String> userIds) async {
+    final Map<String, String> names = {};
+
+    for (var userId in userIds) {
+      try {
+        final userDoc = await _db.collection('users').doc(userId).get();
+        if (userDoc.exists) {
+          names[userId] = userDoc.data()?['name'] ?? 'Unknown User';
+        } else {
+          names[userId] = 'Unknown User';
+        }
+      } catch (e) {
+        names[userId] = 'Unknown User';
+      }
+    }
+
+    return names;
+  }
+
+// Helper method to create welcome message in the chat
+  Future<void> _createWelcomeMessage(
+      String committeeId,
+      String creatorId,
+      String creatorName,
+      String committeeName,
+      ) async {
+    try {
+      final messagesRef = _db
+          .collection('committee_chats')
+          .doc(committeeId)
+          .collection('messages');
+
+      await messagesRef.add({
+        'messageId': DateTime.now().millisecondsSinceEpoch.toString(),
+        'senderId': creatorId,
+        'senderName': creatorName,
+        'message': '🎉 Welcome to $committeeName committee! This is the official chat for this committee. Feel free to discuss, ask questions, and stay updated about committee activities.',
+        'type': 'system', // or 'text' depending on your message type
+        'timestamp': FieldValue.serverTimestamp(),
+        'status': 'sent',
+        'readBy': [creatorId],
+      });
+
+      print('✅ Welcome message created for committee: $committeeId');
+    } catch (e) {
+      print('❌ Error creating welcome message: $e');
+    }
+  }
+
+// Optional: Method to update chat when new member joins
+  Future<void> _addMemberToChat({
+    required String committeeId,
+    required String userId,
+    required String userName,
+  }) async {
+    try {
+      final chatRef = _db.collection('committee_chats').doc(committeeId);
+
+      await chatRef.update({
+        'participants': FieldValue.arrayUnion([userId]),
+        'participantNames.$userId': userName,
+        'unreadCounts.$userId': 0,
+      });
+
+      // Add system message about new member
+      final messagesRef = chatRef.collection('messages');
+      await messagesRef.add({
+        'messageId': DateTime.now().millisecondsSinceEpoch.toString(),
+        'senderId': 'system',
+        'senderName': 'System',
+        'message': '$userName has joined the committee!',
+        'type': 'system',
+        'timestamp': FieldValue.serverTimestamp(),
+        'status': 'sent',
+        'readBy': [userId],
+      });
+
+    } catch (e) {
+      print('❌ Error adding member to chat: $e');
     }
   }
 

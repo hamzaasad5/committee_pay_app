@@ -30,22 +30,60 @@ class AppColors {
   static const Color accent = Color(0xFFF59E0B);
 
   static const Color background = Color(0xFFF9FAFB);
-  static const Color surface = Colors.white;
+  // static const Color surface = Colors.white;
 
   static const Color error = Color(0xFFEF4444);
   static const Color success = Color(0xFF10B981);
   static const Color warning = Color(0xFFF59E0B);
   static const Color info = Color(0xFF3B82F6);
 
-  static const Color textPrimary = Color(0xFF111827);
-  static const Color textSecondary = Color(0xFF6B7280);
+  // static const Color textPrimary = Color(0xFF111827);
+  // static const Color textSecondary = Color(0xFF6B7280);
   static const Color textHint = Color(0xFF9CA3AF);
 
   static const Color divider = Color(0xFFE5E7EB);
-  static const Color border = Color(0xFFD1D5DB);
+  // static const Color border = Color(0xFFD1D5DB);
 
   static const Color cardBackground = Colors.white;
   static const Color disabled = Color(0xFFD1D5DB);
+  static const bg         = Color(0xFF0E1117);
+  static const surface    = Color(0xFF161B26);
+  static const surface2   = Color(0xFF1C2333);
+  static const surface3   = Color(0xFF222840);
+
+  // Gold accent
+  static const goldColor       = Color(0xFFD4A847);
+  static const goldSoft   = Color(0x26D4A847);
+  static const goldBorder = Color(0x40D4A847);
+
+  // Text
+  static const textPrimary   = Color(0xFFEDF2FF);
+  static const textSecondary = Color(0xFF8B9CBB);
+  static const textMuted     = Color(0xFF4A5568);
+
+  // Status colors
+  static const green    = Color(0xFF22C77A);
+  static const greenBg  = Color(0x1A22C77A);
+  static const blue     = Color(0xFF4B9EFF);
+  static const blueBg   = Color(0x1A4B9EFF);
+  static const orange   = Color(0xFFFF8C42);
+  static const orangeBg = Color(0x1AFF8C42);
+  static const purple   = Color(0xFFA78BFA);
+  static const purpleBg = Color(0x1AA78BFA);
+  static const red      = Color(0xFFFF5C5C);
+
+  // Borders
+  static const border     = Color(0xFF252E42);
+  static const borderSoft = Color(0xFF1E2636);
+
+  // Radius
+  static const r4  = 4.0;
+  static const r8  = 8.0;
+  static const r10  = 10.0;
+  static const r12 = 12.0;
+  static const r16 = 16.0;
+  static const r20 = 20.0;
+  static const r24 = 24.0;
 
   // Original theme constants for backward compatibility
   // static const Color primaryColor = primary;

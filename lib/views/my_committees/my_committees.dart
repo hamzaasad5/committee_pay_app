@@ -26,8 +26,11 @@ class _MyCommitteesScreenState extends State<MyCommitteesScreen> with AutomaticK
   @override
   void initState() {
     super.initState();
-    // Fetch immediately when screen initializes
+    // Set loading to true immediately when screen initializes
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<CommitteesProvider>();
+      provider.isLoading = true;
+      provider.notifyListeners();
       _fetchCommittees();
     });
   }
@@ -162,6 +165,8 @@ class _MyCommitteesScreenBody extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: () {
+              provider.isLoading = true;
+              provider.notifyListeners();
               provider.fetchUserCommittees(userId);
             },
             tooltip: "Refresh",
@@ -173,7 +178,7 @@ class _MyCommitteesScreenBody extends StatelessWidget {
   }
 
   Widget _buildBody(BuildContext context, CommitteesProvider provider) {
-    // Show loading only on first load when committees are empty
+    // ✅ Show loading on first load (when committees are empty and loading is true)
     if (provider.isLoading && provider.committees.isEmpty) {
       return const Center(
         child: Column(
@@ -192,8 +197,8 @@ class _MyCommitteesScreenBody extends StatelessWidget {
       );
     }
 
-    // Show error if any
-    if (provider.error != null) {
+    // Show error if any (only when not loading)
+    if (provider.error != null && !provider.isLoading) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -229,6 +234,8 @@ class _MyCommitteesScreenBody extends StatelessWidget {
               const SizedBox(height: 24),
               ElevatedButton.icon(
                 onPressed: () {
+                  provider.isLoading = true;
+                  provider.notifyListeners();
                   provider.fetchUserCommittees(userId);
                 },
                 icon: const Icon(Icons.refresh),
@@ -250,8 +257,8 @@ class _MyCommitteesScreenBody extends StatelessWidget {
       );
     }
 
-    // Show empty state
-    if (provider.committees.isEmpty) {
+    // ✅ Show empty state only when committees are empty AND not loading
+    if (provider.committees.isEmpty && !provider.isLoading) {
       return Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -300,7 +307,13 @@ class _MyCommitteesScreenBody extends StatelessWidget {
 
     // Show committees list
     return RefreshIndicator(
-      onRefresh: () async => provider.fetchUserCommittees(userId),
+      onRefresh: () async {
+        provider.isLoading = true;
+        provider.notifyListeners();
+        provider.fetchUserCommittees(userId);
+        // Small delay to ensure loading state is shown
+        await Future.delayed(const Duration(milliseconds: 100));
+      },
       color: AppColors.primaryColor,
       backgroundColor: AppColors.surfaceDark,
       child: ListView.builder(
@@ -761,7 +774,7 @@ class _MyCommitteesScreenBody extends StatelessWidget {
                               context,
                               MaterialPageRoute(
                                 builder: (_) => CommitteeMembersScreen(
-                                  committeeId: committee["id"],
+                                  committeeId: committee["id"], committeeName: committee["name"],
                                 ),
                               ),
                             );
