@@ -13,82 +13,51 @@ class CommitteesProvider extends ChangeNotifier {
   /// ------------------------
   /// Fetch all committees for a user (creator or joined member)
   /// ------------------------
+  // In your CommitteesProvider, change the method signature:
   void fetchUserCommittees(String userId) {
     print("🔹 fetchUserCommittees called for userId: $userId");
-
-    if (userId.isEmpty) {
-      print("⚠️ fetchUserCommittees: userId is empty!");
-      isLoading = false;
-      error = "Invalid user ID";
-      notifyListeners();
-      return;
-    }
-
     isLoading = true;
     error = null;
     committees = [];
     notifyListeners();
 
     _subscription?.cancel();
-    print("🔹 Previous subscription cancelled (if any)");
 
     _subscription = _db
         .collection("committees")
         .orderBy("createdAt", descending: true)
         .snapshots()
         .listen((snapshot) {
-      print("🔹 Received snapshot with ${snapshot.docs.length} committees");
+      print("📌 Firestore snapshot received: ${snapshot.docs.length} documents");
 
       committees = snapshot.docs.map((doc) {
         final data = doc.data();
-        data["id"] = doc.id; // store doc id
-        print("  🔹 Committee fetched: ${data["name"] ?? "Unnamed"} (ID: ${doc.id})");
+        data["id"] = doc.id; // Attach doc ID for later usage
         return data;
       }).where((committee) {
-        // 1️⃣ Include committees created by this user
-        if (committee["adminId"] == userId) {
-          print("    ✅ Included as creator: ${committee["name"]}");
-          return true;
-        }
+        // Admin sees own committees
+        if (committee["adminId"] == userId) return true;
 
-        // 2️⃣ Include committees where user has joined
-        final members = List.from(committee["members"] ?? []);
-        bool isMember = false;
-
-        for (var m in members) {
-          final mUid = m["uid"] ?? "-";
-          final mStatus = m["status"]?.toString().toLowerCase() ?? "";
-          print("      🔹 Checking member: $mUid, status: $mStatus");
-
-          if (mUid == userId && mStatus == "joined") {
-            isMember = true;
-            print("        ✅ User is a joined member");
-            break;
-          }
-        }
-
-        if (isMember) {
-          print("    ✅ Included as member: ${committee["name"]}");
-        } else {
-          print("    ❌ Excluded: ${committee["name"]}");
-        }
-
-        return isMember;
+        // Member sees only joined committees
+        Map membersMap = Map<String, dynamic>.from(committee["membersMap"] ?? {});
+        return membersMap[userId] == true;
       }).toList();
 
-      print("🔹 Total committees after filtering: ${committees.length}");
+      for (var c in committees) {
+        print("📄 Committee fetched: ${c['name']} with ID: ${c['id']}");
+      }
 
       isLoading = false;
       error = null;
+      print("✅ Committees list updated, total: ${committees.length}");
       notifyListeners();
     }, onError: (e) {
-      print("⚠️ Error fetching committees: $e");
       error = e.toString();
       isLoading = false;
+      print("❌ Error fetching committees: $error");
       notifyListeners();
     });
   }
-
 
 
   /// ------------------------
@@ -98,25 +67,24 @@ class CommitteesProvider extends ChangeNotifier {
     required String name,
     required int monthlyAmount,
     required int totalMembers,
-    required List<Map<String, String>> memberPhones, // [{name, phone}]
+    required List<Map<String, String>> memberPhones,
     required DateTime startMonth,
     required DateTime endMonth,
     required String creatorId,
     required String creatorName,
-    required String type, // "monthly" or "daily"
+    required String type,
     required int totalAmount,
     required String committeeCode,
   }) async {
     try {
-      Map<String, dynamic> membersMap = {};
+      Map<String, bool> membersMap = {};
       Map<String, Map<String, dynamic>> membersPayments = {};
       List<Map<String, dynamic>> members = [];
 
-      // Initialize invited members (pending)
       for (var member in memberPhones) {
         String phone = member["phone"]!;
         String memberName = member["name"]!;
-        membersMap[phone] = false; // pending
+        membersMap[phone] = false;
         members.add({
           "name": memberName,
           "phone": phone,
@@ -125,7 +93,7 @@ class CommitteesProvider extends ChangeNotifier {
         });
       }
 
-      // Add creator as member with "Joined" status
+      /// Add creator as member with "Joined" status
       membersMap[creatorId] = true;
       members.add({
         "name": creatorName,
@@ -154,6 +122,28 @@ class CommitteesProvider extends ChangeNotifier {
         "createdAt": FieldValue.serverTimestamp(),
       });
 
+      // Create activity for committee creation
+      await FirebaseFirestore.instance.collection("activity").add({
+        "userId": creatorId,
+        "type": "committee_created", // Changed to reflect committee creation
+        "committeeId": docRef.id, // Fixed: Added committee ID
+        "committeeName": name, // Fixed: Use the name variable directly
+        "timestamp": Timestamp.now(),
+        "details": "Created committee: $name", // Fixed: Use name variable
+      });
+
+      // Optional: Create separate activity entries for invited members
+      for (var member in memberPhones) {
+        await FirebaseFirestore.instance.collection("activity").add({
+          "userId": member["phone"], // Using phone number as identifier
+          "type": "committee_invitation",
+          "committeeId": docRef.id,
+          "committeeName": name,
+          "timestamp": Timestamp.now(),
+          "details": "Invited to committee: $name",
+        });
+      }
+
       return docRef.id;
     } catch (e) {
       print("❌ Error adding committee: $e");
@@ -161,47 +151,42 @@ class CommitteesProvider extends ChangeNotifier {
     }
   }
 
-
-
-
-  /// ------------------------
   /// Update payment status for a member
-  /// ------------------------
+
   Future<void> updatePaymentStatus(
       String committeeId, String memberPhone, String monthKey, String status) async {
-    print("🔹 updatePaymentStatus called: committeeId=$committeeId, member=$memberPhone, month=$monthKey, status=$status");
+    print(" updatePaymentStatus called: committeeId=$committeeId, member=$memberPhone, month=$monthKey, status=$status");
     try {
       final docRef = _db.collection("committees").doc(committeeId);
       await docRef.update({
         "membersPayments.$memberPhone.$monthKey": status,
       });
-      print("✅ Payment updated successfully");
+      print(" Payment updated successfully");
       notifyListeners();
     } catch (e) {
-      debugPrint("❌ Error updating payment: $e");
+      debugPrint(" Error updating payment: $e");
     }
   }
 
-  /// ------------------------
   /// Announce winner for a month
-  /// ------------------------
+
   Future<void> announceWinner(String committeeId, String monthKey, String memberPhone) async {
-    print("🔹 announceWinner called: committeeId=$committeeId, month=$monthKey, member=$memberPhone");
+    print(" announceWinner called: committeeId=$committeeId, month=$monthKey, member=$memberPhone");
     try {
       final docRef = _db.collection("committees").doc(committeeId);
       await docRef.update({
         "winners.$monthKey": memberPhone,
       });
-      print("✅ Winner announced successfully");
+      print(" Winner announced successfully");
       notifyListeners();
     } catch (e) {
-      debugPrint("❌ Error announcing winner: $e");
+      debugPrint(" Error announcing winner: $e");
     }
   }
 
-  /// ------------------------
+
   /// Accept invitation to a committee
-  /// ------------------------
+
   Future<void> acceptInvitation({
     required String committeeId,
     required String userId,
@@ -214,7 +199,7 @@ class CommitteesProvider extends ChangeNotifier {
 
     Map<String, dynamic> committee = snapshot.data()!;
 
-    // Update member status or add new member
+    /// Update member status or add new member
     List members = List.from(committee["members"] ?? []);
     bool exists = false;
 
@@ -237,12 +222,12 @@ class CommitteesProvider extends ChangeNotifier {
       });
     }
 
-    // Update membersMap
+    /// Update membersMap
     Map<String, dynamic> membersMap =
     Map<String, dynamic>.from(committee["membersMap"] ?? {});
     membersMap[userId] = true;
 
-    // Initialize payments for user
+    /// Initialize payments for user
     Map<String, Map<String, String>> membersPayments =
     Map<String, Map<String, String>>.from(committee["membersPayments"] ?? {});
     DateTime startMonth = (committee["startMonth"] as Timestamp).toDate();
@@ -265,9 +250,6 @@ class CommitteesProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-
-
-
   Future<Map<String, dynamic>?> fetchCommitteeById(String committeeId) async {
     try {
       final doc = await _db.collection("committees").doc(committeeId).get();
@@ -279,7 +261,7 @@ class CommitteesProvider extends ChangeNotifier {
 
       return data;
     } catch (e) {
-      debugPrint("❌ Error fetching committee: $e");
+      debugPrint(" Error fetching committee: $e");
       return null;
     }
   }
@@ -299,10 +281,6 @@ class CommitteesProvider extends ChangeNotifier {
     await fetchCommitteeById(committeeId);
   }
 
-
-  /// ------------------------
-  /// Dispose
-  /// ------------------------
   @override
   void dispose() {
     _subscription?.cancel();
