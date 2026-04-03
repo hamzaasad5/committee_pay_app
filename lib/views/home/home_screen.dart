@@ -1,15 +1,17 @@
 import 'package:committee_pay_app/views/my_committees/add_monthly_committee_screen.dart';
 import 'package:committee_pay_app/views/my_committees/add_daily_committee_screen.dart';
 import 'package:committee_pay_app/views/my_committees/add_user_payment.dart';
+import 'package:committee_pay_app/views/my_committees/my_committees.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../constants/app_colors.dart';
 import '../../models/user_model.dart';
+import '../../providers/committees_provider.dart';
 import '../../services/error_handler.dart';
 import '../../widgets/loading_overlay.dart';
-// import '../../widgets/loading_overlay.dart';
+import '../chats/widgets/member_assignment_home.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,13 +30,14 @@ class _HomeScreenState extends State<HomeScreen>
   UserModel? _userModel;
   bool _isLoading = true;
   List<Map<String, dynamic>> _userCommittees = [];
-
+  late CommitteesProvider _committeesProvider;
   @override
   bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
+    _committeesProvider = CommitteesProvider();
     _initializeUser();
   }
 
@@ -95,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _committeesProvider.dispose();
     _joinCodeController.dispose();
     super.dispose();
   }
@@ -148,7 +152,6 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       final code = _joinCodeController.text.trim().toUpperCase();
 
-      // Find committee by code
       final query = await FirebaseFirestore.instance
           .collection("committees")
           .where("committeeCode", isEqualTo: code)
@@ -164,31 +167,26 @@ class _HomeScreenState extends State<HomeScreen>
       final committeeId = doc.id;
       final committeeData = doc.data();
 
-      // Check if committee has started
       final startDate = (committeeData['startDate'] as Timestamp?)?.toDate();
       if (startDate != null && startDate.isBefore(DateTime.now())) {
         ErrorHandler.showError(context, 'This committee has already started');
         return;
       }
 
-      // Get current committee data
       final membersMap = Map<String, bool>.from(committeeData['membersMap'] ?? {});
       final members = List<Map<String, dynamic>>.from(committeeData['members'] ?? []);
       final membersPayments = Map<String, dynamic>.from(committeeData['membersPayments'] ?? {});
 
-      // Check if already member
       if (membersMap.containsKey(_currentUser!.uid)) {
         ErrorHandler.showError(context, 'You are already a member of this committee');
         return;
       }
 
-      // Check member limit
       if (members.length >= (committeeData['maxMembers'] ?? 10)) {
         ErrorHandler.showError(context, 'Committee is full');
         return;
       }
 
-      // Add new member
       membersMap[_currentUser!.uid] = true;
 
       members.add({
@@ -200,7 +198,6 @@ class _HomeScreenState extends State<HomeScreen>
         "status": "active",
       });
 
-      // Initialize payments
       if (!membersPayments.containsKey(_currentUser!.uid)) {
         final startMonth = (committeeData['startMonth'] as Timestamp?)?.toDate();
         final endMonth = (committeeData['endMonth'] as Timestamp?)?.toDate();
@@ -219,7 +216,7 @@ class _HomeScreenState extends State<HomeScreen>
         }
       }
 
-      // Update Firestore
+      // Update committee document
       await FirebaseFirestore.instance
           .collection("committees")
           .doc(committeeId)
@@ -230,7 +227,16 @@ class _HomeScreenState extends State<HomeScreen>
         "updatedAt": Timestamp.now(),
       });
 
-      // Log activity
+      // 🔹 Create or update chat document using the provider
+      await _committeesProvider.createOrUpdateChatOnJoin(
+        committeeId: committeeId,
+        committeeName: committeeData['name'],
+        committeeImage: committeeData['image'],
+        userId: _currentUser!.uid,
+        userName: _userModel!.name,
+      );
+
+      // Add activity
       await FirebaseFirestore.instance.collection("activity").add({
         "userId": _currentUser!.uid,
         "type": "committee_join",
@@ -240,7 +246,6 @@ class _HomeScreenState extends State<HomeScreen>
         "details": "Joined committee: ${committeeData['name']}",
       });
 
-      // Refresh user committees list
       await _loadUserCommittees();
 
       if (mounted) {
@@ -283,7 +288,6 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    // If user has only one committee, navigate directly
     if (_userCommittees.length == 1) {
       Navigator.push(
         context,
@@ -297,7 +301,6 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    // If user has multiple committees, show selection dialog
     _showCommitteeSelectionDialog();
   }
 
@@ -306,9 +309,12 @@ class _HomeScreenState extends State<HomeScreen>
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surfaceDark,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppColors.r16),
+        ),
         title: const Text(
           "Select Committee",
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         content: SizedBox(
           width: double.maxFinite,
@@ -317,38 +323,56 @@ class _HomeScreenState extends State<HomeScreen>
             itemCount: _userCommittees.length,
             itemBuilder: (context, index) {
               final committee = _userCommittees[index];
-              return ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryColor.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    committee['type'] == 'daily' ? '📅' : '📆',
-                    style: const TextStyle(fontSize: 16),
-                  ),
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.surface2,
+                  borderRadius: BorderRadius.circular(AppColors.r12),
+                  border: Border.all(color: AppColors.border),
                 ),
-                title: Text(
-                  committee['name'] ?? 'Unnamed Committee',
-                  style: const TextStyle(color: Colors.white),
-                ),
-                subtitle: Text(
-                  '${committee['type']} committee',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AddUserPayment(
-                        committeeId: committee['id'],
-                        currentUserId: _currentUser!.uid,
+                child: ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.goldColor,
+                          AppColors.goldColor.withOpacity(0.7),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(AppColors.r12),
+                    ),
+                    child: Center(
+                      child: Text(
+                        committee['type'] == 'daily' ? '📅' : '📆',
+                        style: const TextStyle(fontSize: 18),
                       ),
                     ),
-                  );
-                },
+                  ),
+                  title: Text(
+                    committee['name'] ?? 'Unnamed Committee',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    '${committee['type']} committee',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AddUserPayment(
+                          committeeId: committee['id'],
+                          currentUserId: _currentUser!.uid,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               );
             },
           ),
@@ -356,6 +380,9 @@ class _HomeScreenState extends State<HomeScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.textSecondary,
+            ),
             child: const Text("Cancel"),
           ),
         ],
@@ -368,13 +395,13 @@ class _HomeScreenState extends State<HomeScreen>
     super.build(context);
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundDark,
+      backgroundColor: AppColors.bg,
       appBar: _buildAppBar(),
       body: _currentUser == null
           ? _buildNotLoggedInView()
           : RefreshIndicator(
         onRefresh: _initializeUser,
-        color: AppColors.primaryColor,
+        color: AppColors.goldColor,
         backgroundColor: AppColors.surfaceDark,
         child: _buildMainContent(),
       ),
@@ -384,18 +411,19 @@ class _HomeScreenState extends State<HomeScreen>
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       title: const Text(
-        "RupeeShare",
+        "Committee Pay",
         style: TextStyle(
           fontWeight: FontWeight.bold,
           color: Colors.white,
+          fontSize: 20,
         ),
       ),
-      backgroundColor: AppColors.primaryColor,
-      elevation: 4,
+      backgroundColor: AppColors.surfaceDark,
+      elevation: 0,
       centerTitle: true,
       actions: [
         IconButton(
-          icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+          icon: Icon(Icons.notifications_outlined, color: AppColors.goldColor),
           onPressed: _showNotifications,
         ),
       ],
@@ -407,22 +435,36 @@ class _HomeScreenState extends State<HomeScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.account_circle_outlined,
-            size: 80,
-            color: Colors.grey[600],
+          Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppColors.goldColor, AppColors.goldColor.withOpacity(0.7)],
+              ),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.account_circle,
+              size: 60,
+              color: Colors.white,
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           Text(
             'Not Logged In',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             'Please login to access your committees',
-            style: TextStyle(color: Colors.grey[400]),
+            style: TextStyle(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 24),
           ElevatedButton(
@@ -430,10 +472,10 @@ class _HomeScreenState extends State<HomeScreen>
               Navigator.pushReplacementNamed(context, '/login');
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryColor,
+              backgroundColor: AppColors.goldColor,
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppColors.r12),
               ),
             ),
             child: const Text('Login', style: TextStyle(color: Colors.white)),
@@ -444,10 +486,17 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildMainContent() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.goldColor),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const SizedBox(height: 10),
+        _buildWelcomeSection(),
+        const SizedBox(height: 20),
         _buildJoinCommitteeSection(),
         const SizedBox(height: 24),
         _buildQuickActions(),
@@ -457,29 +506,100 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Widget _buildWelcomeSection() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.goldColor,
+            AppColors.goldColor.withOpacity(0.8),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(AppColors.r16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                _userModel?.name?[0]?.toUpperCase() ?? '?',
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome back,',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white.withOpacity(0.8),
+                  ),
+                ),
+                Text(
+                  _userModel?.name?.split(' ')[0] ?? 'User',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${_userCommittees.length} Committees',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildJoinCommitteeSection() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.surfaceDark,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppColors.r16),
+        border: Border.all(color: AppColors.border),
       ),
       child: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               "Join a Committee",
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              style: TextStyle(
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
@@ -488,8 +608,8 @@ class _HomeScreenState extends State<HomeScreen>
             Text(
               "Enter the committee code provided by your organizer",
               style: TextStyle(
-                color: Colors.grey[400],
-                fontSize: 14,
+                color: AppColors.textSecondary,
+                fontSize: 13,
               ),
             ),
             const SizedBox(height: 20),
@@ -498,22 +618,22 @@ class _HomeScreenState extends State<HomeScreen>
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 hintText: "Enter committee code",
-                hintStyle: TextStyle(color: Colors.grey[500]),
-                prefixIcon: const Icon(Icons.code, color: AppColors.primaryColor),
+                hintStyle: TextStyle(color: AppColors.textSecondary),
+                prefixIcon: Icon(Icons.code, color: AppColors.goldColor),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppColors.r12),
                   borderSide: BorderSide.none,
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                  borderRadius: BorderRadius.circular(AppColors.r12),
+                  borderSide: BorderSide(color: AppColors.border),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.primaryColor, width: 2),
+                  borderRadius: BorderRadius.circular(AppColors.r12),
+                  borderSide: const BorderSide(color: AppColors.goldColor, width: 2),
                 ),
                 filled: true,
-                fillColor: Colors.white.withOpacity(0.05),
+                fillColor: AppColors.surface2,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 14,
@@ -537,10 +657,10 @@ class _HomeScreenState extends State<HomeScreen>
               child: ElevatedButton(
                 onPressed: _isJoining ? null : joinCommittee,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryColor,
+                  backgroundColor: AppColors.goldColor,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppColors.r12),
                   ),
                 ),
                 child: _isJoining
@@ -576,7 +696,8 @@ class _HomeScreenState extends State<HomeScreen>
           padding: const EdgeInsets.only(left: 4, bottom: 12),
           child: Text(
             "Quick Actions",
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            style: TextStyle(
+              fontSize: 18,
               fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
@@ -589,38 +710,40 @@ class _HomeScreenState extends State<HomeScreen>
             crossAxisCount: 2,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            childAspectRatio: 1.2,
+            childAspectRatio: 1.1,
           ),
           children: [
             _QuickActionCard(
-              title: "Add Daily\nCommittee",
+              title: "Daily\nCommittee",
               icon: Icons.add,
-              color: AppColors.primaryColor,
+              color: AppColors.goldColor,
               onTap: () => _navigateToScreen(
                 DailyCommitteeScreen(adminId: _currentUser!.uid),
               ),
             ),
             _QuickActionCard(
-              title: "Add Monthly\nCommittee",
+              title: "Monthly\nCommittee",
               icon: Icons.add_box_outlined,
-              color: Colors.orange,
+              color: AppColors.orange,
               onTap: () => _navigateToScreen(
                 MonthlyCommitteeScreen(adminId: _currentUser!.uid),
               ),
             ),
             _QuickActionCard(
-              title: "Add Payment",
+              title: "Assign\nMonth",
               icon: Icons.add_task,
-              color: Colors.green,
-              onTap: _navigateToAddPayment,
+              color: AppColors.green,
+              onTap: () => _navigateToScreen(
+                MemberAssignmentHome(),
+              ),
             ),
             _QuickActionCard(
               title: "My\nCommittees",
               icon: Icons.group,
-              color: Colors.purple,
-              onTap: () {
-                Navigator.pushNamed(context, '/my-committees', arguments: _currentUser!.uid);
-              },
+              color: AppColors.purple,
+              onTap: () => _navigateToScreen(
+                MyCommitteesScreen(userId: _currentUser!.uid),
+              ),
             ),
           ],
         ),
@@ -629,18 +752,18 @@ class _HomeScreenState extends State<HomeScreen>
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppColors.primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.primaryColor.withOpacity(0.3)),
+              color: AppColors.goldSoft,
+              borderRadius: BorderRadius.circular(AppColors.r12),
+              border: Border.all(color: AppColors.goldColor.withOpacity(0.3)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.info_outline, color: AppColors.primaryColor, size: 20),
+                Icon(Icons.info_outline, color: AppColors.goldColor, size: 20),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     'You are in ${_userCommittees.length} active ${_userCommittees.length == 1 ? 'committee' : 'committees'}',
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: Colors.white),
                   ),
                 ),
               ],
@@ -662,7 +785,8 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               Text(
                 "Recent Activity",
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                style: TextStyle(
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
@@ -672,14 +796,14 @@ class _HomeScreenState extends State<HomeScreen>
                 decoration: BoxDecoration(
                   color: AppColors.surfaceDark,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  border: Border.all(color: AppColors.border),
                 ),
                 child: DropdownButton<String>(
                   value: _selectedFilter,
                   dropdownColor: AppColors.surfaceDark,
                   underline: const SizedBox(),
-                  icon: Icon(Icons.arrow_drop_down, color: Colors.grey[400]),
-                  style: TextStyle(color: Colors.grey[300]),
+                  icon: Icon(Icons.arrow_drop_down, color: AppColors.goldColor),
+                  style: TextStyle(color: AppColors.textSecondary),
                   items: ["Today", "Yesterday", "All"].map((filter) {
                     return DropdownMenuItem(
                       value: filter,
@@ -712,11 +836,11 @@ class _HomeScreenState extends State<HomeScreen>
           return Center(
             child: Column(
               children: [
-                Icon(Icons.error_outline, color: Colors.red[300], size: 40),
+                Icon(Icons.error_outline, color: AppColors.red, size: 40),
                 const SizedBox(height: 8),
                 Text(
                   'Error loading activities',
-                  style: TextStyle(color: Colors.grey[400]),
+                  style: TextStyle(color: AppColors.textSecondary),
                 ),
               ],
             ),
@@ -727,7 +851,7 @@ class _HomeScreenState extends State<HomeScreen>
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(20),
-              child: CircularProgressIndicator(color: AppColors.primaryColor),
+              child: CircularProgressIndicator(color: AppColors.goldColor),
             ),
           );
         }
@@ -743,14 +867,14 @@ class _HomeScreenState extends State<HomeScreen>
                 Icon(
                   Icons.hourglass_empty,
                   size: 48,
-                  color: Colors.grey[600],
+                  color: AppColors.textSecondary,
                 ),
                 const SizedBox(height: 12),
                 Text(
                   "No activity found",
                   style: TextStyle(
-                    color: Colors.grey[500],
-                    fontSize: 16,
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
                   ),
                 ),
               ],
@@ -774,47 +898,71 @@ class _HomeScreenState extends State<HomeScreen>
             switch (type) {
               case "payment":
                 iconData = Icons.payment;
-                iconColor = Colors.green;
+                iconColor = AppColors.green;
                 break;
               case "committee_join":
                 iconData = Icons.group_add;
-                iconColor = Colors.blue;
+                iconColor = AppColors.blue;
                 break;
               case "committee_create":
                 iconData = Icons.add_circle;
-                iconColor = Colors.orange;
+                iconColor = AppColors.orange;
                 break;
               default:
                 iconData = Icons.notifications;
-                iconColor = Colors.grey;
+                iconColor = AppColors.goldColor;
             }
 
             return Container(
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: AppColors.surfaceDark,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
+                borderRadius: BorderRadius.circular(AppColors.r12),
+                border: Border.all(color: AppColors.border),
               ),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: iconColor.withOpacity(0.2),
-                  child: Icon(iconData, color: iconColor, size: 20),
-                ),
-                title: Text(
-                  activity["details"] ?? "Activity",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: iconColor.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(iconData, color: iconColor, size: 20),
                   ),
-                ),
-                subtitle: Text(
-                  _formatTimestamp(timestamp),
-                  style: TextStyle(color: Colors.grey[400], fontSize: 12),
-                ),
-                trailing: Text(
-                  DateFormat('hh:mm a').format(timestamp),
-                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          activity["details"] ?? "Activity",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatTimestamp(timestamp),
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    DateFormat('hh:mm a').format(timestamp),
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               ),
             );
           },
@@ -841,12 +989,15 @@ class _HomeScreenState extends State<HomeScreen>
   void _showNotifications() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
+        content: const Text(
           'Notifications coming soon!',
-          style: TextStyle(color: AppColors.primaryColor),
+          style: TextStyle(color: Colors.white),
         ),
-        backgroundColor: AppColors.surfaceDark,
+        backgroundColor: AppColors.goldColor,
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppColors.r12),
+        ),
       ),
     );
   }
@@ -869,19 +1020,12 @@ class _QuickActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(AppColors.r16),
       child: Container(
         decoration: BoxDecoration(
           color: AppColors.surfaceDark,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(AppColors.r16),
+          border: Border.all(color: AppColors.border),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -894,13 +1038,13 @@ class _QuickActionCard extends StatelessWidget {
               ),
               child: Icon(icon, size: 28, color: color),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
                 title,
                 style: TextStyle(
-                  color: Colors.grey[300],
+                  color: Colors.white,
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
                 ),

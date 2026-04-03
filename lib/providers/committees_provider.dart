@@ -10,11 +10,8 @@ class CommitteesProvider extends ChangeNotifier {
   List<Map<String, dynamic>> committees = [];
   StreamSubscription? _subscription;
 
-  /// ------------------------
   /// Fetch all committees for a user (creator or joined member)
-  /// ------------------------
-  // In your CommitteesProvider, change the method signature:
-  void fetchUserCommittees(String userId) {
+  Future<void> fetchUserCommittees(String userId) {
     print("🔹 fetchUserCommittees called for userId: $userId");
     isLoading = true;
     error = null;
@@ -22,6 +19,8 @@ class CommitteesProvider extends ChangeNotifier {
     notifyListeners();
 
     _subscription?.cancel();
+
+    final completer = Completer<void>();
 
     _subscription = _db
         .collection("committees")
@@ -32,13 +31,10 @@ class CommitteesProvider extends ChangeNotifier {
 
       committees = snapshot.docs.map((doc) {
         final data = doc.data();
-        data["id"] = doc.id; // Attach doc ID for later usage
+        data["id"] = doc.id;
         return data;
       }).where((committee) {
-        // Admin sees own committees
         if (committee["adminId"] == userId) return true;
-
-        // Member sees only joined committees
         Map membersMap = Map<String, dynamic>.from(committee["membersMap"] ?? {});
         return membersMap[userId] == true;
       }).toList();
@@ -51,18 +47,25 @@ class CommitteesProvider extends ChangeNotifier {
       error = null;
       print("✅ Committees list updated, total: ${committees.length}");
       notifyListeners();
+
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
     }, onError: (e) {
       error = e.toString();
       isLoading = false;
       print("❌ Error fetching committees: $error");
       notifyListeners();
+
+      if (!completer.isCompleted) {
+        completer.completeError(e);
+      }
     });
+
+    return completer.future;
   }
 
-
-  /// ------------------------
   /// Add a new committee (creator becomes initial member)
-  /// ------------------------
   Future<String?> addCommittee({
     required String name,
     required int monthlyAmount,
@@ -80,7 +83,7 @@ class CommitteesProvider extends ChangeNotifier {
       Map<String, bool> membersMap = {};
       Map<String, Map<String, dynamic>> membersPayments = {};
       List<Map<String, dynamic>> members = [];
-      List<String> allMemberIds = []; // Store all member IDs for chat
+      List<String> allMemberIds = [];
 
       // Add creator
       membersMap[creatorId] = true;
@@ -103,8 +106,6 @@ class CommitteesProvider extends ChangeNotifier {
           "status": "Pending",
           "payments": {},
         });
-
-        // Store phone for chat (will be resolved to user ID later)
         allMemberIds.add(phone);
       }
 
@@ -132,7 +133,7 @@ class CommitteesProvider extends ChangeNotifier {
       await _createChatDocument(
         committeeId: docRef.id,
         committeeName: name,
-        committeeImage: null, // Add committee image if available
+        committeeImage: null,
         creatorId: creatorId,
         creatorName: creatorName,
         members: allMemberIds,
@@ -167,7 +168,76 @@ class CommitteesProvider extends ChangeNotifier {
     }
   }
 
-// Helper method to create chat document
+  /// Create or update chat document when a member joins
+  Future<void> createOrUpdateChatOnJoin({
+    required String committeeId,
+    required String committeeName,
+    String? committeeImage,
+    required String userId,
+    required String userName,
+  }) async {
+    try {
+      final chatRef = _db.collection('committee_chats').doc(committeeId);
+      final chatDoc = await chatRef.get();
+
+      // Get all current members from committee document
+      final committeeDoc = await _db.collection('committees').doc(committeeId).get();
+      if (!committeeDoc.exists) return;
+
+      final committeeData = committeeDoc.data()!;
+      final membersMap = Map<String, bool>.from(committeeData['membersMap'] ?? {});
+      final participants = membersMap.keys.toList();
+
+      if (!chatDoc.exists) {
+        // Create new chat document
+        // Get participant names
+        final participantNames = await _getParticipantNames(participants);
+
+        // Initialize unread counts
+        final Map<String, int> unreadCounts = {};
+        for (var participant in participants) {
+          unreadCounts[participant] = 0;
+        }
+
+        // Create the chat document
+        await chatRef.set({
+          'committeeId': committeeId,
+          'committeeName': committeeName,
+          'committeeImage': committeeImage,
+          'participants': participants,
+          'participantNames': participantNames,
+          'createdAt': FieldValue.serverTimestamp(),
+          'createdBy': participants.isNotEmpty ? participants.first : userId,
+          'createdByName': participantNames[participants.isNotEmpty ? participants.first : userId] ?? userName,
+          'lastMessage': 'Welcome to the committee!',
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'lastMessageSender': userId,
+          'lastMessageSenderName': userName,
+          'unreadCounts': unreadCounts,
+          'status': 'active',
+        });
+
+        print('✅ Chat document created for committee: $committeeId');
+      } else {
+        // Update existing chat with new member
+        await chatRef.update({
+          'participants': FieldValue.arrayUnion([userId]),
+          'participantNames.$userId': userName,
+          'unreadCounts.$userId': 0,
+        });
+
+        print('✅ Chat document updated for committee: $committeeId');
+      }
+
+      // Add system message about new member joining
+      await _addJoinSystemMessage(committeeId, userName, committeeName);
+
+    } catch (e) {
+      print('❌ Error creating/updating chat document: $e');
+    }
+  }
+
+  /// Helper method to create chat document
   Future<void> _createChatDocument({
     required String committeeId,
     required String committeeName,
@@ -177,14 +247,11 @@ class CommitteesProvider extends ChangeNotifier {
     required List<String> members,
   }) async {
     try {
-      // Create participants list with actual user IDs
-      // First, get user IDs for phone numbers if needed
       List<String> participantIds = [];
 
       for (var member in members) {
         // Check if member is a phone number or user ID
         if (member.contains('@') || member.length > 10) {
-          // It's likely an email or user ID
           participantIds.add(member);
         } else {
           // It's a phone number, need to find user ID
@@ -197,7 +264,6 @@ class CommitteesProvider extends ChangeNotifier {
           if (userDoc.docs.isNotEmpty) {
             participantIds.add(userDoc.docs.first.id);
           } else {
-            // User not registered yet, store phone as temporary identifier
             participantIds.add(member);
           }
         }
@@ -237,7 +303,7 @@ class CommitteesProvider extends ChangeNotifier {
     }
   }
 
-// Helper method to get participant names
+  /// Get participant names from user IDs
   Future<Map<String, String>> _getParticipantNames(List<String> userIds) async {
     final Map<String, String> names = {};
 
@@ -257,7 +323,7 @@ class CommitteesProvider extends ChangeNotifier {
     return names;
   }
 
-// Helper method to create welcome message in the chat
+  /// Create welcome message in the chat
   Future<void> _createWelcomeMessage(
       String committeeId,
       String creatorId,
@@ -275,7 +341,7 @@ class CommitteesProvider extends ChangeNotifier {
         'senderId': creatorId,
         'senderName': creatorName,
         'message': '🎉 Welcome to $committeeName committee! This is the official chat for this committee. Feel free to discuss, ask questions, and stay updated about committee activities.',
-        'type': 'system', // or 'text' depending on your message type
+        'type': 'system',
         'timestamp': FieldValue.serverTimestamp(),
         'status': 'sent',
         'readBy': [creatorId],
@@ -287,43 +353,42 @@ class CommitteesProvider extends ChangeNotifier {
     }
   }
 
-// Optional: Method to update chat when new member joins
-  Future<void> _addMemberToChat({
-    required String committeeId,
-    required String userId,
-    required String userName,
-  }) async {
+  /// Add join system message
+  Future<void> _addJoinSystemMessage(
+      String committeeId,
+      String userName,
+      String committeeName,
+      ) async {
     try {
-      final chatRef = _db.collection('committee_chats').doc(committeeId);
+      final messagesRef = _db
+          .collection('committee_chats')
+          .doc(committeeId)
+          .collection('messages');
 
-      await chatRef.update({
-        'participants': FieldValue.arrayUnion([userId]),
-        'participantNames.$userId': userName,
-        'unreadCounts.$userId': 0,
-      });
-
-      // Add system message about new member
-      final messagesRef = chatRef.collection('messages');
       await messagesRef.add({
         'messageId': DateTime.now().millisecondsSinceEpoch.toString(),
         'senderId': 'system',
         'senderName': 'System',
-        'message': '$userName has joined the committee!',
+        'message': '$userName has joined the $committeeName committee',
         'type': 'system',
         'timestamp': FieldValue.serverTimestamp(),
         'status': 'sent',
-        'readBy': [userId],
+        'readBy': [],
       });
 
+      print('✅ Join system message added for: $userName');
     } catch (e) {
-      print('❌ Error adding member to chat: $e');
+      print('❌ Error adding join system message: $e');
     }
   }
 
   /// Update payment status for a member
-
   Future<void> updatePaymentStatus(
-      String committeeId, String memberPhone, String monthKey, String status) async {
+      String committeeId,
+      String memberPhone,
+      String monthKey,
+      String status
+      ) async {
     print(" updatePaymentStatus called: committeeId=$committeeId, member=$memberPhone, month=$monthKey, status=$status");
     try {
       final docRef = _db.collection("committees").doc(committeeId);
@@ -338,7 +403,6 @@ class CommitteesProvider extends ChangeNotifier {
   }
 
   /// Announce winner for a month
-
   Future<void> announceWinner(String committeeId, String monthKey, String memberPhone) async {
     print(" announceWinner called: committeeId=$committeeId, month=$monthKey, member=$memberPhone");
     try {
@@ -353,9 +417,7 @@ class CommitteesProvider extends ChangeNotifier {
     }
   }
 
-
   /// Accept invitation to a committee
-
   Future<void> acceptInvitation({
     required String committeeId,
     required String userId,
@@ -368,7 +430,7 @@ class CommitteesProvider extends ChangeNotifier {
 
     Map<String, dynamic> committee = snapshot.data()!;
 
-    /// Update member status or add new member
+    // Update member status or add new member
     List members = List.from(committee["members"] ?? []);
     bool exists = false;
 
@@ -391,12 +453,12 @@ class CommitteesProvider extends ChangeNotifier {
       });
     }
 
-    /// Update membersMap
+    // Update membersMap
     Map<String, dynamic> membersMap =
     Map<String, dynamic>.from(committee["membersMap"] ?? {});
     membersMap[userId] = true;
 
-    /// Initialize payments for user
+    // Initialize payments for user
     Map<String, Map<String, String>> membersPayments =
     Map<String, Map<String, String>>.from(committee["membersPayments"] ?? {});
     DateTime startMonth = (committee["startMonth"] as Timestamp).toDate();
@@ -416,9 +478,18 @@ class CommitteesProvider extends ChangeNotifier {
       "membersPayments": membersPayments,
     });
 
+    // Update chat document
+    await createOrUpdateChatOnJoin(
+      committeeId: committeeId,
+      committeeName: committee['name'],
+      userId: userId,
+      userName: name,
+    );
+
     notifyListeners();
   }
 
+  /// Fetch committee by ID
   Future<Map<String, dynamic>?> fetchCommitteeById(String committeeId) async {
     try {
       final doc = await _db.collection("committees").doc(committeeId).get();
@@ -435,6 +506,7 @@ class CommitteesProvider extends ChangeNotifier {
     }
   }
 
+  /// Save winner manually
   Future<void> saveWinnerManual({
     required String committeeId,
     required String monthKey,

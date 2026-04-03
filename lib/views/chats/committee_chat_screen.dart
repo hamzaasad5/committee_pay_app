@@ -8,9 +8,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:url_launcher/url_launcher.dart';
 import '../../../constants/app_colors.dart';
+import '../../../providers/committees_provider.dart';
 import '../../../services/chat_service.dart';
 import '../../../services/image_upload_service.dart';
 import '../my_committees/committee_members_screen.dart';
@@ -31,8 +30,10 @@ class CommitteeChatScreen extends StatefulWidget {
   State<CommitteeChatScreen> createState() => _CommitteeChatScreenState();
 }
 
-class _CommitteeChatScreenState extends State<CommitteeChatScreen> with AutomaticKeepAliveClientMixin {
-  final ChatService _chatService = ChatService();
+class _CommitteeChatScreenState extends State<CommitteeChatScreen> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
+  late ChatService _chatService;
+  late CommitteesProvider _committeesProvider;
+
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
@@ -46,6 +47,11 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
   List<Map<String, dynamic>> _messages = [];
   bool _isTyping = false;
   Timer? _typingTimer;
+  String? _currentUserId;
+  bool _isLoading = true;
+  String? _committeeAdminId;
+  Map<String, dynamic>? _committeeData;
+  Set<String> _previousMembers = {};
 
   @override
   bool get wantKeepAlive => true;
@@ -53,29 +59,116 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initializeServices();
+    _setupListeners();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _markAllMessagesAsRead();
+      _updateOnlineStatus(true);
+    } else if (state == AppLifecycleState.paused) {
+      _updateOnlineStatus(false);
+    }
+  }
+
+  void _initializeServices() {
+    _chatService = ChatService();
+    _committeesProvider = CommitteesProvider();
+    _currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
     _markAllMessagesAsRead();
     _fetchCommitteeMembers();
+    _fetchCommitteeAdmin();
     _setupTypingListener();
     _setupMessageReadReceipts();
+    _updateOnlineStatus(true);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToBottom();
+      setState(() => _isLoading = false);
     });
+  }
+
+  void _setupListeners() {
+    // Listen for member changes to show system messages
+    FirebaseFirestore.instance
+        .collection('committees')
+        .doc(widget.committeeId)
+        .snapshots()
+        .listen((doc) {
+      if (doc.exists && mounted) {
+        final data = doc.data();
+        final membersMap = Map<String, bool>.from(data?['membersMap'] ?? {});
+        final currentMembers = membersMap.keys.toSet();
+
+        // Check for new members
+        final newMembers = currentMembers.difference(_previousMembers);
+
+        if (newMembers.isNotEmpty && _previousMembers.isNotEmpty) {
+          for (var newMemberId in newMembers) {
+            final newMemberName = _userNames[newMemberId] ?? 'A new member';
+            _sendSystemMessage('$newMemberName has joined the ${widget.committeeName} committee');
+          }
+        }
+
+        _previousMembers = currentMembers;
+
+        // Update committee data
+        _committeeData = data;
+        _committeeAdminId = data?['adminId'];
+      }
+    });
+  }
+
+  Future<void> _fetchCommitteeAdmin() async {
+    try {
+      final committeeDoc = await FirebaseFirestore.instance
+          .collection('committees')
+          .doc(widget.committeeId)
+          .get();
+
+      if (committeeDoc.exists) {
+        final data = committeeDoc.data();
+        _committeeAdminId = data?['adminId'];
+        _committeeData = data;
+
+        // Initialize previous members set
+        final membersMap = Map<String, bool>.from(data?['membersMap'] ?? {});
+        _previousMembers = membersMap.keys.toSet();
+      }
+    } catch (e) {
+      print('Error fetching committee admin: $e');
+    }
+  }
+
+  Future<void> _sendSystemMessage(String message) async {
+    try {
+      await _chatService.sendSystemMessage(widget.committeeId, message);
+      print('✅ System message sent: $message');
+    } catch (e) {
+      print('❌ Error sending system message: $e');
+    }
   }
 
   @override
   void dispose() {
+    _updateOnlineStatus(false);
+    WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     _typingTimer?.cancel();
+    _committeesProvider.dispose();
     super.dispose();
   }
 
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
+        0,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
@@ -97,7 +190,7 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
     _isTyping = typing;
     _chatService.setTypingStatus(
       widget.committeeId,
-      FirebaseAuth.instance.currentUser!.uid,
+      _currentUserId!,
       typing,
     );
 
@@ -111,16 +204,15 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
 
   void _setupMessageReadReceipts() {
     _chatService.getMessages(widget.committeeId).listen((QuerySnapshot snapshot) {
-      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-      if (currentUserId != null) {
+      if (_currentUserId != null) {
         for (var doc in snapshot.docs) {
           final messageData = doc.data() as Map<String, dynamic>;
           final messageId = doc.id;
           final senderId = messageData['senderId'];
           final status = messageData['status'];
 
-          if (senderId != currentUserId && status == 'delivered') {
-            _chatService.markMessageAsRead(messageId, currentUserId);
+          if (senderId != _currentUserId && status == 'delivered') {
+            _chatService.markMessageAsRead(messageId, _currentUserId!);
           }
         }
       }
@@ -128,9 +220,13 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
   }
 
   Future<void> _markAllMessagesAsRead() async {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
-    if (userId == null) return;
-    await _chatService.markAllMessagesAsRead(widget.committeeId, userId);
+    if (_currentUserId == null) return;
+    await _chatService.markAllMessagesAsRead(widget.committeeId, _currentUserId!);
+  }
+
+  Future<void> _updateOnlineStatus(bool isOnline) async {
+    if (_currentUserId == null) return;
+    await _chatService.updateOnlineStatus(widget.committeeId, _currentUserId!, isOnline);
   }
 
   Future<void> _fetchCommitteeMembers() async {
@@ -179,16 +275,7 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
       Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error sending message: ${e.toString()}'),
-            backgroundColor: AppColors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppColors.r12),
-            ),
-          ),
-        );
+        _showSnackBar('Error sending message: ${e.toString()}', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isSending = false);
@@ -289,7 +376,7 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
   }
 
   void _showMessageOptions(Map<String, dynamic> message) {
-    final isMe = message['senderId'] == FirebaseAuth.instance.currentUser?.uid;
+    final isMe = message['senderId'] == _currentUserId;
 
     showModalBottomSheet(
       context: context,
@@ -349,29 +436,11 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
   }
 
   void _copyToClipboard(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Copied to clipboard'),
-        backgroundColor: AppColors.goldColor,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppColors.r12),
-        ),
-      ),
-    );
+    _showSnackBar('Copied to clipboard');
   }
 
   void _saveImage(String imageUrl) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Image saved to gallery'),
-        backgroundColor: AppColors.goldColor,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppColors.r12),
-        ),
-      ),
-    );
+    _showSnackBar('Image saved to gallery');
   }
 
   void _showDeleteConfirmation(String messageId) {
@@ -396,13 +465,7 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
             onPressed: () {
               Navigator.pop(context);
               _chatService.deleteMessage(messageId);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Message deleted'),
-                  backgroundColor: AppColors.goldColor,
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
+              _showSnackBar('Message deleted');
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.red,
@@ -413,6 +476,19 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
             child: const Text('Delete'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.red : AppColors.goldColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppColors.r12),
+        ),
       ),
     );
   }
@@ -428,6 +504,15 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        body: const Center(
+          child: CircularProgressIndicator(color: AppColors.goldColor),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -465,11 +550,18 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
                         final doc = messages[messages.length - 1 - index];
                         final message = doc.data() as Map<String, dynamic>;
                         final messageId = doc.id;
-                        final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-                        final isMe = message['senderId'] == currentUserId;
+                        final messageType = message['type'];
+
+                        // Check if it's a system message
+                        if (messageType == 'system') {
+                          return _buildSystemMessage(message);
+                        }
+
+                        final isMe = message['senderId'] == _currentUserId;
                         final senderName = message['senderName'] ?? _userNames[message['senderId']] ?? 'Unknown';
                         final senderAvatar = _userAvatars[message['senderId']];
                         final messageStatus = message['status'] as String? ?? 'sent';
+                        final isCreator = message['senderId'] == _committeeAdminId;
 
                         return GestureDetector(
                           onLongPress: () => _showMessageOptions(message),
@@ -480,6 +572,7 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
                             senderAvatar: senderAvatar,
                             messageStatus: messageStatus,
                             messageId: messageId,
+                            isCreator: isCreator,
                           ),
                         );
                       },
@@ -490,7 +583,7 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
                         if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox();
 
                         final typingUsers = snapshot.data!.entries
-                            .where((e) => e.value && e.key != FirebaseAuth.instance.currentUser?.uid)
+                            .where((e) => e.value && e.key != _currentUserId)
                             .toList();
 
                         if (typingUsers.isEmpty) return const SizedBox();
@@ -543,111 +636,56 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
     );
   }
 
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      backgroundColor: AppColors.surfaceDark,
-      elevation: 0,
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back, color: AppColors.goldColor),
-        onPressed: () => Navigator.pop(context),
-      ),
-      title: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.goldColor,
-                  AppColors.goldColor.withOpacity(0.7),
-                ],
-              ),
-            ),
-            child: Center(
-              child: widget.committeeImage != null
-                  ? ClipOval(
-                child: CachedNetworkImage(
-                  imageUrl: widget.committeeImage!,
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.cover,
-                ),
-              )
-                  : Text(
-                _getInitials(widget.committeeName),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
+  Widget _buildSystemMessage(Map<String, dynamic> message) {
+    final text = message['message'] ?? '';
+    final timestamp = (message['timestamp'] as Timestamp?)?.toDate();
+    final formattedTime = timestamp != null
+        ? DateFormat('hh:mm a').format(timestamp)
+        : '';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.goldColor.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: AppColors.goldColor.withOpacity(0.3),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 14,
+                color: AppColors.goldColor,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                text,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.goldColor,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              if (formattedTime.isNotEmpty) ...[
+                const SizedBox(width: 8),
                 Text(
-                  widget.committeeName,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                  formattedTime,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: AppColors.goldColor.withOpacity(0.7),
                   ),
                 ),
-                StreamBuilder<int>(
-                  stream: _chatService.getOnlineMembersCount(widget.committeeId),
-                  builder: (context, snapshot) {
-                    final onlineCount = snapshot.data ?? 0;
-                    return Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: onlineCount > 0 ? AppColors.green : AppColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          onlineCount > 0 ? '$onlineCount online' : 'Offline',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: onlineCount > 0 ? AppColors.green : AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
               ],
-            ),
+            ],
           ),
-        ],
+        ),
       ),
-      actions: [
-        IconButton(
-          icon: Icon(Icons.search, color: AppColors.goldColor),
-          onPressed: () => _showSearchMessages(),
-        ),
-        IconButton(
-          icon: Icon(Icons.more_vert, color: AppColors.goldColor),
-          onPressed: () => _showGroupInfoDialog(),
-        ),
-      ],
-    );
-  }
-
-  void _showSearchMessages() {
-    showSearch(
-      context: context,
-      delegate: MessageSearchDelegate(_chatService, widget.committeeId),
     );
   }
 
@@ -658,6 +696,7 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
     String? senderAvatar,
     required String messageStatus,
     required String messageId,
+    required bool isCreator,
   }) {
     final timestamp = (message['timestamp'] as Timestamp?)?.toDate();
     final formattedTime = timestamp != null
@@ -720,13 +759,42 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
                   if (!isMe)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                      child: Text(
-                        senderName,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                          color: AppColors.goldColor,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isCreator ? Icons.star : Icons.person,
+                            size: 12,
+                            color: isCreator ? AppColors.goldColor : AppColors.goldColor,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            senderName,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: AppColors.goldColor,
+                            ),
+                          ),
+                          if (isCreator) ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.goldColor.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Creator',
+                                style: TextStyle(
+                                  fontSize: 8,
+                                  color: AppColors.goldColor,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   if (isImageMessage) ...[
@@ -1082,7 +1150,7 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
   }
 
   void _showUserProfile(String userId) {
-    // Implement user profile view
+    _showSnackBar('User profile coming soon');
   }
 
   void _showGroupInfoDialog() {
@@ -1129,6 +1197,14 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
                     width: 80,
                     height: 80,
                     fit: BoxFit.cover,
+                    errorWidget: (context, url, error) => Text(
+                      _getInitials(widget.committeeName),
+                      style: const TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                 )
                     : Text(
@@ -1220,7 +1296,6 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
       MaterialPageRoute(
         builder: (context) => CommitteeMembersScreen(
           committeeId: widget.committeeId,
-          committeeName: widget.committeeName,
         ),
       ),
     );
@@ -1237,10 +1312,125 @@ class _CommitteeChatScreenState extends State<CommitteeChatScreen> with Automati
       ),
     );
   }
+
+  void _showSearchMessages() {
+    showSearch(
+      context: context,
+      delegate: MessageSearchDelegate(_chatService, widget.committeeId),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: AppColors.surfaceDark,
+      elevation: 0,
+      leading: IconButton(
+        icon: Icon(Icons.arrow_back, color: AppColors.goldColor),
+        onPressed: () => Navigator.pop(context),
+      ),
+      title: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.goldColor,
+                  AppColors.goldColor.withOpacity(0.7),
+                ],
+              ),
+            ),
+            child: Center(
+              child: widget.committeeImage != null
+                  ? ClipOval(
+                child: CachedNetworkImage(
+                  imageUrl: widget.committeeImage!,
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  errorWidget: (context, url, error) => Text(
+                    _getInitials(widget.committeeName),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              )
+                  : Text(
+                _getInitials(widget.committeeName),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.committeeName,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                StreamBuilder<int>(
+                  stream: _chatService.getOnlineMembersCount(widget.committeeId),
+                  builder: (context, snapshot) {
+                    final onlineCount = snapshot.data ?? 0;
+                    return Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: onlineCount > 0 ? AppColors.green : AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          onlineCount > 0 ? '$onlineCount online' : 'Offline',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: onlineCount > 0 ? AppColors.green : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        IconButton(
+          icon: Icon(Icons.search, color: AppColors.goldColor),
+          onPressed: () => _showSearchMessages(),
+        ),
+        IconButton(
+          icon: Icon(Icons.more_vert, color: AppColors.goldColor),
+          onPressed: () => _showGroupInfoDialog(),
+        ),
+      ],
+    );
+  }
 }
 
-
-// Message Search Delegate
+// Message Search Delegate (same as before)
 class MessageSearchDelegate extends SearchDelegate {
   final ChatService _chatService;
   final String committeeId;
@@ -1384,7 +1574,6 @@ class MessageSearchDelegate extends SearchDelegate {
                 child: InkWell(
                   onTap: () {
                     close(context, null);
-                    // You can add functionality to scroll to the message
                   },
                   borderRadius: BorderRadius.circular(AppColors.r12),
                   child: Container(

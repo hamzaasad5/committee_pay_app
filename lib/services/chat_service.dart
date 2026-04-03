@@ -1,4 +1,3 @@
-// lib/services/chat_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -261,6 +260,27 @@ class ChatService {
     }
   }
 
+  // Update online status
+  Future<void> updateOnlineStatus(String committeeId, String userId, bool isOnline) async {
+    try {
+      await _firestore
+          .collection('committees')
+          .doc(committeeId)
+          .collection('members')
+          .doc(userId)
+          .set({
+        'userId': userId,
+        'isOnline': isOnline,
+        'lastSeen': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      print('✅ Online status updated: $userId isOnline: $isOnline');
+    } catch (e) {
+      print('❌ Error updating online status: $e');
+    }
+  }
+
+  // Get online members count
   Stream<int> getOnlineMembersCount(String committeeId) {
     return _firestore
         .collection('committees')
@@ -268,20 +288,28 @@ class ChatService {
         .collection('members')
         .where('isOnline', isEqualTo: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs.length);
+        .map((snapshot) => snapshot.docs.length)
+        .handleError((error) {
+      print('❌ Error getting online members count: $error');
+      return Stream.value(0);
+    });
   }
 
-// Get members count
+  // Get members count
   Stream<int> getMembersCount(String committeeId) {
     return _firestore
         .collection('committees')
         .doc(committeeId)
         .collection('members')
         .snapshots()
-        .map((snapshot) => snapshot.docs.length);
+        .map((snapshot) => snapshot.docs.length)
+        .handleError((error) {
+      print('❌ Error getting members count: $error');
+      return Stream.value(0);
+    });
   }
 
-// Get committee members as stream
+  // Get committee members as stream
   Stream<List<Map<String, dynamic>>> getCommitteeMembersStream(String committeeId) {
     return _firestore
         .collection('committees')
@@ -297,30 +325,63 @@ class ChatService {
           'email': data['email'] ?? '',
           'avatar': data['avatar'] ?? '',
           'isOnline': data['isOnline'] ?? false,
+          'lastSeen': data['lastSeen'],
         };
       }).toList();
+    })
+        .handleError((error) {
+      print('❌ Error getting committee members stream: $error');
+      return Stream.value([]);
     });
   }
 
-// Get committee members
+  // Get committee members (single fetch)
   Future<List<Map<String, dynamic>>> getCommitteeMembers(String committeeId) async {
-    final snapshot = await _firestore
-        .collection('committees')
-        .doc(committeeId)
-        .collection('members')
-        .get();
+    try {
+      final snapshot = await _firestore
+          .collection('committees')
+          .doc(committeeId)
+          .collection('members')
+          .get();
 
-    return snapshot.docs.map((doc) {
-      final data = doc.data();
-      return {
-        'userId': doc.id,
-        'name': data['name'] ?? 'Unknown',
-        'avatar': data['avatar'] ?? '',
-      };
-    }).toList();
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'userId': doc.id,
+          'name': data['name'] ?? 'Unknown',
+          'avatar': data['avatar'] ?? '',
+          'email': data['email'] ?? '',
+          'isOnline': data['isOnline'] ?? false,
+        };
+      }).toList();
+    } catch (e) {
+      print('❌ Error getting committee members: $e');
+      return [];
+    }
   }
 
-// Get typing status
+  // Add member to committee chat
+  Future<void> addMemberToChat(String committeeId, String userId, String userName) async {
+    try {
+      await _firestore
+          .collection('committees')
+          .doc(committeeId)
+          .collection('members')
+          .doc(userId)
+          .set({
+        'userId': userId,
+        'name': userName,
+        'isOnline': false,
+        'joinedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      print('✅ Member added to chat: $userId');
+    } catch (e) {
+      print('❌ Error adding member to chat: $e');
+    }
+  }
+
+  // Get typing status
   Stream<Map<String, bool>> getTypingStatus(String committeeId) {
     return _firestore
         .collection('committees')
@@ -333,48 +394,72 @@ class ChatService {
         typingUsers[doc.id] = doc['isTyping'] ?? false;
       }
       return typingUsers;
+    })
+        .handleError((error) {
+      print('❌ Error getting typing status: $error');
+      return Stream.value({});
     });
   }
 
-// Set typing status
+  // Set typing status
   Future<void> setTypingStatus(String committeeId, String userId, bool isTyping) async {
-    await _firestore
-        .collection('committees')
-        .doc(committeeId)
-        .collection('typing')
-        .doc(userId)
-        .set({
-      'isTyping': isTyping,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-// Mark all messages as read
-  Future<void> markAllMessagesAsRead(String committeeId, String userId) async {
-    final messages = await _firestore
-        .collection('committee_chats')
-        .where('committeeId', isEqualTo: committeeId)
-        .where('senderId', isNotEqualTo: userId)
-        .get();
-
-    for (var doc in messages.docs) {
-      final readBy = List<String>.from(doc['readBy'] ?? []);
-      if (!readBy.contains(userId)) {
-        await doc.reference.update({
-          'readBy': FieldValue.arrayUnion([userId]),
-          'status': 'read',
-        });
-      }
+    try {
+      await _firestore
+          .collection('committees')
+          .doc(committeeId)
+          .collection('typing')
+          .doc(userId)
+          .set({
+        'isTyping': isTyping,
+        'userId': userId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      print('❌ Error setting typing status: $e');
     }
   }
 
-// Delete message
-  Future<void> deleteMessage(String messageId) async {
-    await _firestore.collection('committee_chats').doc(messageId).delete();
+  // Mark all messages as read
+  Future<void> markAllMessagesAsRead(String committeeId, String userId) async {
+    try {
+      final messages = await _firestore
+          .collection('committee_chats')
+          .where('committeeId', isEqualTo: committeeId)
+          .where('senderId', isNotEqualTo: userId)
+          .get();
+
+      for (var doc in messages.docs) {
+        final readBy = List<String>.from(doc['readBy'] ?? []);
+        if (!readBy.contains(userId)) {
+          await doc.reference.update({
+            'readBy': FieldValue.arrayUnion([userId]),
+            'status': 'read',
+            'readAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+      print('✅ All messages marked as read for user: $userId');
+    } catch (e) {
+      print('❌ Error marking all messages as read: $e');
+    }
   }
 
-// Search messages
+  // Delete message
+  Future<void> deleteMessage(String messageId) async {
+    try {
+      await _firestore.collection('committee_chats').doc(messageId).delete();
+      print('✅ Message deleted: $messageId');
+    } catch (e) {
+      print('❌ Error deleting message: $e');
+    }
+  }
+
+  // Search messages
   Stream<QuerySnapshot> searchMessages(String committeeId, String searchQuery) {
+    if (searchQuery.isEmpty) {
+      return Stream.empty();
+    }
+
     return _firestore
         .collection('committee_chats')
         .where('committeeId', isEqualTo: committeeId)
@@ -382,16 +467,82 @@ class ChatService {
         .where('message', isLessThanOrEqualTo: '$searchQuery\uf8ff')
         .orderBy('timestamp', descending: true)
         .limit(50)
-        .snapshots();
+        .snapshots()
+        .handleError((error) {
+      print('❌ Error searching messages: $error');
+      return Stream.error(error);
+    });
   }
 
-// Get media messages
+  // Get media messages
   Stream<QuerySnapshot> getMediaMessages(String committeeId) {
     return _firestore
         .collection('committee_chats')
         .where('committeeId', isEqualTo: committeeId)
         .where('imageUrl', isNotEqualTo: null)
         .orderBy('timestamp', descending: true)
-        .snapshots();
+        .snapshots()
+        .handleError((error) {
+      print('❌ Error getting media messages: $error');
+      return Stream.error(error);
+    });
+  }
+
+  // Get user details
+  Future<Map<String, dynamic>?> getUserDetails(String userId) async {
+    try {
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        return userDoc.data();
+      }
+      return null;
+    } catch (e) {
+      print('❌ Error getting user details: $e');
+      return null;
+    }
+  }
+
+  /// Send system message(not used)
+  Future<void> sendSystemMessage(String committeeId, String message) async {
+    try {
+      final messageRef = _firestore.collection('committee_chats').doc();
+      final messageId = messageRef.id;
+
+      await messageRef.set({
+        'messageId': messageId,
+        'committeeId': committeeId,
+        'senderId': 'system',
+        'senderName': 'System',
+        'message': message,
+        'type': 'system',
+        'timestamp': FieldValue.serverTimestamp(),
+        'status': 'sent',
+        'readBy': [],
+      });
+      print('✅ System message sent: $message');
+    } catch (e) {
+      print('❌ Error sending system message: $e');
+    }
+  }
+
+  // Clean up offline members (run periodically)
+  Future<void> cleanupOfflineMembers(String committeeId) async {
+    try {
+      final cutoffTime = DateTime.now().subtract(const Duration(minutes: 5));
+      final offlineMembers = await _firestore
+          .collection('committees')
+          .doc(committeeId)
+          .collection('members')
+          .where('isOnline', isEqualTo: false)
+          .where('lastSeen', isLessThan: cutoffTime)
+          .get();
+
+      for (var doc in offlineMembers.docs) {
+        await doc.reference.delete();
+      }
+      print('✅ Cleaned up ${offlineMembers.docs.length} offline members');
+    } catch (e) {
+      print('❌ Error cleaning up offline members: $e');
+    }
   }
 }

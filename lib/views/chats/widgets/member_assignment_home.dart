@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../constants/app_colors.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/committees_provider.dart';
 import '../../../utils/app_local_storage.dart';
@@ -16,7 +17,8 @@ class MemberAssignmentHome extends StatefulWidget {
 
 class _MemberAssignmentHomeState extends State<MemberAssignmentHome> {
   String? _currentUserId;
-  bool _loading = true;
+  bool _isLoading = true; // Controls initial loading state
+  bool _isFetchingCommittees = true; // Controls committees fetching state
 
   @override
   void initState() {
@@ -34,37 +36,147 @@ class _MemberAssignmentHomeState extends State<MemberAssignmentHome> {
 
     setState(() {
       _currentUserId = userId;
-      _loading = false;
+      _isLoading = false;
+      _isFetchingCommittees = true;
     });
 
-    // Fetch committees after the widget is built
     if (userId != null) {
-      // Use addPostFrameCallback to avoid calling setState during build
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        context.read<CommitteesProvider>().fetchUserCommittees(userId!);
-      });
+      // Fetch committees and wait for completion
+      final committeesProvider = context.read<CommitteesProvider>();
+      await committeesProvider.fetchUserCommittees(userId);
+
+      // After fetching, update state to stop showing loader
+      if (mounted) {
+        setState(() {
+          _isFetchingCommittees = false;
+        });
+      }
+    } else {
+      // If no user ID, stop fetching state
+      if (mounted) {
+        setState(() {
+          _isFetchingCommittees = false;
+        });
+      }
     }
   }
 
-  // Future<void> _refreshCommittees() async {
-  //   if (_currentUserId != null) {
-  //     await context
-  //         .read<CommitteesProvider>()
-  //         .fetchUserCommittees(_currentUserId!);
-  //   }
-  // }
-
   @override
   Widget build(BuildContext context) {
-    if (_loading || _currentUserId == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+    // Show initial loader while getting user ID
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        body: const Center(
+          child: CircularProgressIndicator(color: AppColors.goldColor),
+        ),
+      );
+    }
+
+    // Show loader while fetching committees
+    if (_isFetchingCommittees) {
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          title: const Text(
+            "Assign Members",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 22,
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: AppColors.surfaceDark,
+          elevation: 0,
+          centerTitle: true,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: AppColors.goldColor),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: AppColors.goldColor),
+              SizedBox(height: 16),
+              Text(
+                "Loading committees...",
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // If no user ID, show error state
+    if (_currentUserId == null) {
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          title: const Text(
+            "Assign Members",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 22,
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: AppColors.surfaceDark,
+          elevation: 0,
+          centerTitle: true,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: AppColors.goldColor),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 64,
+                color: AppColors.red,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                "User not found",
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Please login again",
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pushReplacementNamed(context, '/login');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.goldColor,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppColors.r12),
+                  ),
+                ),
+                child: const Text("Login"),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
     final committees = context.watch<CommitteesProvider>().committees;
 
-    // Show all committees where user is member OR creator
     final userCommittees = committees
         .where((c) => (c["members"] as List)
         .any((m) => m["uid"] == _currentUserId) ||
@@ -72,55 +184,49 @@ class _MemberAssignmentHomeState extends State<MemberAssignmentHome> {
         .toList();
 
     return Scaffold(
-      backgroundColor: Theme.of(context).primaryColorDark,
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
         title: const Text(
-          "Committees",
+          "Assign Members",
           style: TextStyle(
             fontWeight: FontWeight.bold,
-            fontSize: 24,
+            fontSize: 22,
+            color: Colors.white,
           ),
         ),
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: AppColors.surfaceDark,
         elevation: 0,
-        centerTitle: false,
-        actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            child: IconButton(
-              icon: const Icon(Icons.notifications_outlined),
-              onPressed: () {
-                // TODO: Implement notifications
-              },
-            ),
-          ),
-        ],
+        centerTitle: true,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: AppColors.goldColor),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: userCommittees.isEmpty
           ? _buildEmptyState()
           : ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: userCommittees.length,
-            itemBuilder: (context, index) {
-              final committee = userCommittees[index];
-              final isCreator = committee["adminId"] == _currentUserId;
-              final membersCount = (committee["members"] as List).length;
-              final monthlyAmount = committee["monthlyAmount"] ?? 0;
-              final assignments = Map<String, dynamic>.from(
-                  committee["winners"] ?? {});
-              final assignedCount = assignments.length;
+        padding: const EdgeInsets.all(16),
+        itemCount: userCommittees.length,
+        itemBuilder: (context, index) {
+          final committee = userCommittees[index];
+          final isCreator = committee["adminId"] == _currentUserId;
+          final membersCount = (committee["members"] as List).length;
+          final monthlyAmount = committee["monthlyAmount"] ?? 0;
+          final assignments = Map<String, dynamic>.from(
+              committee["winners"] ?? {});
+          final assignedCount = assignments.length;
 
-              return _buildCommitteeCard(
-                context: context,
-                committee: committee,
-                isCreator: isCreator,
-                membersCount: membersCount,
-                monthlyAmount: monthlyAmount,
-                assignedCount: assignedCount,
-                totalMonths: membersCount,
-              );
-            },
-          ),
+          return _buildCommitteeCard(
+            context: context,
+            committee: committee,
+            isCreator: isCreator,
+            membersCount: membersCount,
+            monthlyAmount: monthlyAmount,
+            assignedCount: assignedCount,
+            totalMonths: membersCount,
+          );
+        },
+      ),
     );
   }
 
@@ -135,280 +241,243 @@ class _MemberAssignmentHomeState extends State<MemberAssignmentHome> {
   }) {
     final committeeId = committee["id"];
     final committeeName = committee["name"] ?? "Committee";
-    final completionPercentage = totalMonths > 0
-        ? (assignedCount / totalMonths) * 100
-        : 0;
-
-    final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      child: Material(
-        elevation: 2,
-        borderRadius: BorderRadius.circular(20),
-        color: theme.cardColor,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MemberAssignmentScreen(
-                  committeeId: committeeId,
-                ),
-              ),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceDark,
+        borderRadius: BorderRadius.circular(AppColors.r16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Row
+            Row(
               children: [
-                // Header Row with Title and Chat Button
-                Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          // Creator Badge
-                          if (isCreator)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: theme.primaryColor.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.star,
-                                    size: 12,
-                                    color: theme.primaryColor,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    "Creator",
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: theme.primaryColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              committeeName,
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: isDarkMode ? Colors.white : const Color(0xFF2C3E50),
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                // Committee Icon
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.goldColor,
+                        AppColors.goldColor.withOpacity(0.7),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(AppColors.r12),
+                  ),
+                  child: Center(
+                    child: Text(
+                      committeeName[0].toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
                     ),
-                    // Chat Button
-                    Container(
-                      decoration: BoxDecoration(
-                        color: isDarkMode
-                            ? Colors.white.withOpacity(0.1)
-                            : Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: IconButton(
-                        icon: Icon(
-                          Icons.chat_bubble_outline,
-                          color: theme.primaryColor,
-                          size: 22,
-                        ),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => CommitteeChatScreen(
-                                committeeId: committeeId,
-                                committeeName: committeeName,
-                              ),
-                            ),
-                          );
-                        },
-                        tooltip: "Open Chat",
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-
-                const SizedBox(height: 12),
-
-                // Stats Row
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _buildStatChip(
-                      icon: Icons.people_outline,
-                      label: "$membersCount Members",
-                      color: Colors.blue,
-                      isDarkTheme: isDarkMode,
-                    ),
-                    _buildStatChip(
-                      icon: Icons.currency_rupee,
-                      label: "Rs $monthlyAmount",
-                      color: Colors.green,
-                      isDarkTheme: isDarkMode,
-                    ),
-                    _buildStatChip(
-                      icon: Icons.assignment_turned_in,
-                      label: "$assignedCount/$totalMonths Assigned",
-                      color: Colors.orange,
-                      isDarkTheme: isDarkMode,
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
-
-                // Progress Indicator
-                if (totalMonths > 0)
-                  Column(
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            "Completion Progress",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Text(
-                            "${completionPercentage.toStringAsFixed(0)}%",
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: theme.primaryColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: completionPercentage / 100,
-                          backgroundColor: isDarkMode ? Colors.grey[800] : Colors.grey[200],
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            theme.primaryColor,
-                          ),
-                          minHeight: 6,
+                      Text(
+                        committeeName,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                      const SizedBox(height: 4),
+                      if (isCreator)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.goldSoft,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.star,
+                                size: 12,
+                                color: AppColors.goldColor,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                "Creator",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.goldColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
-
-                const SizedBox(height: 12),
-
-                // Divider
-                Divider(
-                  color: isDarkMode ? Colors.grey[800] : Colors.grey[200],
-                  height: 1,
-                ),
-
-                const SizedBox(height: 8),
-
-                // Footer with Action Buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildActionButton(
-                        icon: Icons.assignment_turned_in,
-                        label: "Assignments",
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => MemberAssignmentScreen(
-                                committeeId: committeeId,
-                              ),
-                            ),
-                          );
-                        },
-                        color: theme.primaryColor,
-                        isDarkTheme: isDarkMode,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildActionButton(
-                        icon: Icons.chat_bubble_outline,
-                        label: "Chat",
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => CommitteeChatScreen(
-                                committeeId: committeeId,
-                                committeeName: committeeName,
-                              ),
-                            ),
-                          );
-                        },
-                        color: Colors.blue,
-                        isDarkTheme: isDarkMode,
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
-          ),
+
+            const SizedBox(height: 16),
+
+            // Stats Row
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatItem(
+                    icon: Icons.people_outline,
+                    value: "$membersCount",
+                    label: "Members",
+                    color: AppColors.blue,
+                  ),
+                ),
+                Expanded(
+                  child: _buildStatItem(
+                    icon: Icons.attach_money,
+                    value: "\$${_formatAmount(monthlyAmount)}",
+                    label: "Amount",
+                    color: AppColors.green,
+                  ),
+                ),
+                Expanded(
+                  child: _buildStatItem(
+                    icon: Icons.assignment_turned_in,
+                    value: "$assignedCount/$totalMonths",
+                    label: "Assigned",
+                    color: AppColors.orange,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Divider
+            Divider(
+              color: AppColors.border,
+              height: 1,
+            ),
+
+            const SizedBox(height: 12),
+
+            // Action Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.assignment_turned_in,
+                    label: "View Assignments",
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MemberAssignmentScreen(
+                            committeeId: committeeId,
+                          ),
+                        ),
+                      );
+                    },
+                    color: AppColors.blue,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.person_add_alt_1,
+                    label: "Assign Member",
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MemberAssignmentScreen(
+                            committeeId: committeeId,
+                          ),
+                        ),
+                      );
+                    },
+                    color: AppColors.goldColor,
+                    isGold: true,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.chat_bubble_outline,
+                    label: "Chat",
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CommitteeChatScreen(
+                            committeeId: committeeId,
+                            committeeName: committeeName,
+                          ),
+                        ),
+                      );
+                    },
+                    color: AppColors.green,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildStatChip({
+  Widget _buildStatItem({
     required IconData icon,
+    required String value,
     required String label,
     required Color color,
-    required bool isDarkTheme,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: isDarkTheme
-            ? color.withOpacity(0.2)
-            : color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: color,
-            ),
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            shape: BoxShape.circle,
           ),
-        ],
-      ),
+          child: Icon(icon, size: 20, color: color),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: AppColors.textSecondary,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 
@@ -417,31 +486,33 @@ class _MemberAssignmentHomeState extends State<MemberAssignmentHome> {
     required String label,
     required VoidCallback onPressed,
     required Color color,
-    required bool isDarkTheme,
+    bool isGold = false,
   }) {
     return InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(AppColors.r12),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: isDarkTheme
-              ? color.withOpacity(0.2)
-              : color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
+          color: isGold ? AppColors.goldSoft : color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(AppColors.r12),
+          border: isGold ? Border.all(color: AppColors.goldColor.withOpacity(0.3)) : null,
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 6),
+            Icon(icon, size: 20, color: color),
+            const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: color,
               ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -449,9 +520,19 @@ class _MemberAssignmentHomeState extends State<MemberAssignmentHome> {
     );
   }
 
-  Widget _buildEmptyState() {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+  // Universal amount formatter with $ sign
+  String _formatAmount(int amount) {
+    if (amount >= 1000000000) {
+      return '${(amount / 1000000000).toStringAsFixed(1)}B';
+    } else if (amount >= 1000000) {
+      return '${(amount / 1000000).toStringAsFixed(1)}M';
+    } else if (amount >= 1000) {
+      return '${(amount / 1000).toStringAsFixed(1)}K';
+    }
+    return amount.toString();
+  }
 
+  Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -459,13 +540,13 @@ class _MemberAssignmentHomeState extends State<MemberAssignmentHome> {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+              color: AppColors.goldSoft,
               shape: BoxShape.circle,
             ),
             child: Icon(
               Icons.group_off,
               size: 64,
-              color: isDarkMode ? Colors.grey[600] : Colors.grey[400],
+              color: AppColors.goldColor,
             ),
           ),
           const SizedBox(height: 20),
@@ -474,7 +555,7 @@ class _MemberAssignmentHomeState extends State<MemberAssignmentHome> {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: isDarkMode ? Colors.grey[300] : Colors.grey[700],
+              color: Colors.white,
             ),
           ),
           const SizedBox(height: 8),
@@ -482,9 +563,26 @@ class _MemberAssignmentHomeState extends State<MemberAssignmentHome> {
             "You are not part of any committee.\nJoin or create a committee to get started.",
             style: TextStyle(
               fontSize: 14,
-              color: isDarkMode ? Colors.grey[500] : Colors.grey[500],
+              color: AppColors.textSecondary,
             ),
             textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: () {
+              // Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.goldColor,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppColors.r12),
+              ),
+            ),
+            child: const Text(
+              "Browse Committees",
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),

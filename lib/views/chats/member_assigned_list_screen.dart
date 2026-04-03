@@ -1,7 +1,7 @@
-// lib/screens/member_assignment_screen.dart (Production Ready)
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import '../../../constants/app_colors.dart';
 import '../../../providers/committees_provider.dart';
 import '../../../utils/app_local_storage.dart';
 import 'committee_chat_screen.dart';
@@ -24,7 +24,6 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
   String? selectedMemberId;
   String? currentUserId;
 
-  // Dynamic month list based on committee start date and member count
   List<MapEntry<int, String>> _availableMonths = [];
 
   final Map<int, String> monthNames = {
@@ -69,7 +68,7 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
       if (mounted) {
         setState(() {
           _committee = data;
-          _calculateAvailableMonths(); // Calculate months based on committee data
+          _calculateAvailableMonths();
           loading = false;
         });
       }
@@ -80,35 +79,28 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
         });
         Fluttertoast.showToast(
           msg: "Error loading committee: $e",
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.red,
           textColor: Colors.white,
         );
       }
     }
   }
 
-  /// Calculate the months that should be shown in dropdown
-  /// Logic: Start from committee start month, show consecutive months
-  /// equal to the number of members in the committee.
   void _calculateAvailableMonths() {
     if (_committee == null) return;
 
-    // Get committee start date
     final startDateStr = _committee!["startDate"] as String?;
 
     if (startDateStr == null) {
-      // Fallback to all months if start date not available
       _availableMonths = monthNames.entries.toList();
       return;
     }
 
     try {
-      // Parse start date
       final startDate = DateTime.parse(startDateStr);
       int startMonth = startDate.month;
       int startYear = startDate.year;
 
-      // Get members count (only non-admin members if needed)
       final members = List<Map<String, dynamic>>.from(_committee!["members"] ?? []);
       final memberCount = members.length;
 
@@ -117,7 +109,6 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
         return;
       }
 
-      // Generate months starting from start month, up to memberCount months
       List<MapEntry<int, String>> generatedMonths = [];
       int currentMonth = startMonth;
       int currentYear = startYear;
@@ -125,7 +116,6 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
       for (int i = 0; i < memberCount; i++) {
         generatedMonths.add(MapEntry(currentMonth, monthNames[currentMonth]!));
 
-        // Move to next month
         if (currentMonth == 12) {
           currentMonth = 1;
           currentYear++;
@@ -136,7 +126,6 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
 
       _availableMonths = generatedMonths;
     } catch (e) {
-      // Fallback to all months if parsing fails
       _availableMonths = monthNames.entries.toList();
     }
   }
@@ -166,7 +155,6 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
     return monthKey.replaceAll("Month", "");
   }
 
-  // Get unassigned members count
   int _getUnassignedMembersCount(List<Map<String, dynamic>> members) {
     int count = 0;
     for (var member in members) {
@@ -181,21 +169,51 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: AppColors.goldColor),
+              SizedBox(height: 16),
+              Text(
+                "Loading committee...",
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     if (_committee == null) {
       return Scaffold(
+        backgroundColor: AppColors.bg,
         appBar: AppBar(
-          title: const Text("Monthly Assignments"),
-          backgroundColor: Theme.of(context).primaryColor,
+          title: const Text(
+            "Assign Members",
+            style: TextStyle(color: Colors.white),
+          ),
+          backgroundColor: AppColors.surfaceDark,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: AppColors.goldColor),
+            onPressed: () => Navigator.pop(context),
+          ),
         ),
         body: const Center(
-          child: Text("Failed to load committee data"),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 64, color: AppColors.red),
+              SizedBox(height: 16),
+              Text(
+                "Failed to load committee data",
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -206,23 +224,28 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
     final bool isCreator = committee["adminId"] == currentUserId;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
         title: const Text(
-          "Monthly Assignments",
+          "Assign Members",
           style: TextStyle(
             fontWeight: FontWeight.bold,
-            fontSize: 20,
+            fontSize: 22,
+            color: Colors.white,
           ),
         ),
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: AppColors.surfaceDark,
         elevation: 0,
-        centerTitle: false,
+        centerTitle: true,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: AppColors.goldColor),
+          onPressed: () => Navigator.pop(context),
+        ),
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 8),
             child: IconButton(
-              icon: const Icon(Icons.chat_bubble_outline),
+              icon: Icon(Icons.chat_bubble_outline, color: AppColors.goldColor),
               onPressed: () {
                 Navigator.push(
                   context,
@@ -243,13 +266,13 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(),
+            const CircularProgressIndicator(color: AppColors.goldColor),
             const SizedBox(height: 16),
             Text(
               "Assigning member...",
               style: TextStyle(
                 fontSize: 16,
-                color: Colors.grey[600],
+                color: AppColors.textSecondary,
               ),
             ),
           ],
@@ -257,7 +280,8 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
       )
           : RefreshIndicator(
         onRefresh: fetchCommittee,
-        color: Theme.of(context).primaryColor,
+        color: AppColors.goldColor,
+        backgroundColor: AppColors.surfaceDark,
         child: CustomScrollView(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
@@ -266,17 +290,10 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
               padding: const EdgeInsets.all(16),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  // Creator Form Section - Only shown to admin/creator
-                  if (isCreator)
-                    _buildAssignmentForm(context, committee, members),
-
+                  if (isCreator) _buildAssignmentForm(committee, members),
                   if (isCreator) const SizedBox(height: 24),
-
-                  // Assignments List Header
                   _buildSectionHeader(assignments.length),
                   const SizedBox(height: 16),
-
-                  // Assignments List
                   if (assignments.isEmpty)
                     _buildEmptyState(isCreator)
                   else
@@ -293,52 +310,66 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
   }
 
   Widget _buildAssignmentForm(
-      BuildContext context,
       Map<String, dynamic> committee,
       List<Map<String, dynamic>> members,
       ) {
-    final theme = Theme.of(context);
     final unassignedCount = _getUnassignedMembersCount(members);
-
-    // Get assignments from committee data
     final assignments = Map<String, dynamic>.from(committee["winners"] ?? {});
     final assignedCount = assignments.length;
     final totalMonths = _availableMonths.length;
     final remainingMonths = totalMonths - assignedCount;
-
-    // Check if all members are already assigned
     final allMembersAssigned = unassignedCount == 0;
-    // Check if all months are assigned
     final allMonthsAssigned = assignedCount >= totalMonths;
 
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceDark,
+        borderRadius: BorderRadius.circular(AppColors.r16),
+        border: Border.all(color: AppColors.border),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              "Create Assignment",
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.goldSoft,
+                    borderRadius: BorderRadius.circular(AppColors.r12),
+                  ),
+                  child: Icon(
+                    Icons.add_circle_outline,
+                    color: AppColors.goldColor,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  "Create Assignment",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
-            /// Info about available assignments
+            // Info Card
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade200),
+                color: AppColors.goldSoft,
+                borderRadius: BorderRadius.circular(AppColors.r12),
+                border: Border.all(color: AppColors.goldColor.withOpacity(0.3)),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, size: 18, color: Colors.blue.shade700),
+                  Icon(Icons.info_outline, size: 18, color: AppColors.goldColor),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -347,7 +378,7 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
                           "Remaining: ${remainingMonths > 0 ? remainingMonths : 0}",
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.blue.shade700,
+                        color: AppColors.goldColor,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -356,19 +387,18 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
               ),
             ),
 
-            // Show completion message if all assignments are done
-            if (allMembersAssigned || allMonthsAssigned)
+            if (allMembersAssigned || allMonthsAssigned) ...[
+              const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
-                margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.shade200),
+                  color: AppColors.greenBg,
+                  borderRadius: BorderRadius.circular(AppColors.r12),
+                  border: Border.all(color: AppColors.green.withOpacity(0.3)),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.check_circle, size: 18, color: Colors.green.shade700),
+                    Icon(Icons.check_circle, size: 18, color: AppColors.green),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -377,7 +407,7 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
                             : "All months have been assigned!",
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.green.shade700,
+                          color: AppColors.green,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -385,38 +415,33 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
                   ],
                 ),
               ),
+            ],
 
-            /// MONTH DROPDOWN with Black Theme (Dynamic months starting from committee start date)
-            Theme(
-              data: Theme.of(context).copyWith(
-                canvasColor: Colors.black,
-                brightness: Brightness.dark,
+            const SizedBox(height: 20),
+
+            // Month Dropdown
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface2,
+                borderRadius: BorderRadius.circular(AppColors.r12),
+                border: Border.all(color: AppColors.border),
               ),
               child: DropdownButtonFormField<String>(
                 value: selectedMonth,
                 isExpanded: true,
-                hint: const Text(
+                hint: Text(
                   "Select Month",
-                  style: TextStyle(color: Colors.white70),
+                  style: TextStyle(color: AppColors.textSecondary),
                 ),
                 decoration: InputDecoration(
-                  labelText: "Select Month",
-                  labelStyle: const TextStyle(color: Colors.white70),
-                  prefixIcon:
-                  const Icon(Icons.calendar_today, color: Colors.white70),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.white30),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.white),
+                  prefixIcon: Icon(Icons.calendar_today, color: AppColors.goldColor),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
                   ),
                 ),
-                dropdownColor: Colors.black,
+                dropdownColor: AppColors.surfaceDark,
                 style: const TextStyle(color: Colors.white),
                 items: _availableMonths.map((entry) {
                   final key = "Month${entry.key}";
@@ -428,9 +453,8 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
                     enabled: !assigned,
                     child: Text(
                       assigned ? "$monthName (Assigned)" : monthName,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: assigned ? Colors.white54 : Colors.white,
+                        color: assigned ? AppColors.textSecondary : Colors.white,
                       ),
                     ),
                   );
@@ -445,36 +469,29 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
 
             const SizedBox(height: 16),
 
-            /// MEMBER DROPDOWN with Black Theme
-            Theme(
-              data: Theme.of(context).copyWith(
-                canvasColor: Colors.black,
-                brightness: Brightness.dark,
+            // Member Dropdown
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface2,
+                borderRadius: BorderRadius.circular(AppColors.r12),
+                border: Border.all(color: AppColors.border),
               ),
               child: DropdownButtonFormField<String>(
                 value: selectedMemberId,
                 isExpanded: true,
-                hint: const Text(
+                hint: Text(
                   "Select Member",
-                  style: TextStyle(color: Colors.white70),
+                  style: TextStyle(color: AppColors.textSecondary),
                 ),
                 decoration: InputDecoration(
-                  labelText: "Select Member",
-                  labelStyle: const TextStyle(color: Colors.white70),
-                  prefixIcon: const Icon(Icons.person, color: Colors.white70),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.white30),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.white),
+                  prefixIcon: Icon(Icons.person, color: AppColors.goldColor),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
                   ),
                 ),
-                dropdownColor: Colors.black,
+                dropdownColor: AppColors.surfaceDark,
                 style: const TextStyle(color: Colors.white),
                 items: members.map((m) {
                   final id = (m["uid"] ?? m["phone"]).toString();
@@ -486,9 +503,8 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
                     enabled: !assigned,
                     child: Text(
                       assigned ? "$name (Assigned)" : name,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: assigned ? Colors.white54 : Colors.white,
+                        color: assigned ? AppColors.textSecondary : Colors.white,
                       ),
                     ),
                   );
@@ -501,25 +517,33 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
 
-            /// SAVE BUTTON
+            // Save Button
             SizedBox(
               width: double.infinity,
-              child: FilledButton(
+              child: ElevatedButton(
                 onPressed: (selectedMonth != null &&
                     selectedMemberId != null &&
                     !_isMonthAssigned(selectedMonth!) &&
                     !_isMemberAssignedToAnyMonth(selectedMemberId!))
                     ? _saveAssignment
                     : null,
-                style: FilledButton.styleFrom(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.goldColor,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppColors.r12),
                   ),
                 ),
-                child: const Text("Save Assignment"),
+                child: const Text(
+                  "Save Assignment",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ),
           ],
@@ -534,12 +558,12 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
+            color: AppColors.goldSoft,
+            borderRadius: BorderRadius.circular(AppColors.r12),
           ),
           child: Icon(
             Icons.assignment_turned_in,
-            color: Theme.of(context).primaryColor,
+            color: AppColors.goldColor,
             size: 22,
           ),
         ),
@@ -549,17 +573,14 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF2C3E50),
+            color: Colors.white,
           ),
         ),
         const Spacer(),
         Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 6,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor,
+            color: AppColors.goldColor,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
@@ -592,102 +613,86 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.05),
-            spreadRadius: 1,
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: AppColors.surfaceDark,
+        borderRadius: BorderRadius.circular(AppColors.r16),
+        border: Border.all(color: AppColors.border),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () {
-            // Optional: Show details dialog
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Theme.of(context).primaryColor,
-                        Theme.of(context).primaryColor.withOpacity(0.7),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(
-                      monthNumber.isNotEmpty ? monthNumber : "?",
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.goldColor,
+                    AppColors.goldColor.withOpacity(0.7),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(AppColors.r12),
+              ),
+              child: Center(
+                child: Text(
+                  monthNumber.isNotEmpty ? monthNumber : "?",
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    monthLabel.isNotEmpty ? monthLabel : "Unknown Month",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
                     children: [
-                      Text(
-                        monthLabel.isNotEmpty ? monthLabel : "Unknown Month",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Color(0xFF2C3E50),
-                        ),
+                      Icon(
+                        Icons.person_outline,
+                        size: 14,
+                        color: AppColors.textSecondary,
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.person_outline,
-                            size: 14,
-                            color: Colors.grey[500],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            memberName,
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
+                      const SizedBox(width: 4),
+                      Text(
+                        memberName,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                        ),
                       ),
                     ],
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.check_circle,
-                    color: Colors.green,
-                    size: 20,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.greenBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.check_circle,
+                color: AppColors.green,
+                size: 20,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -697,21 +702,22 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 40),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: AppColors.surfaceDark,
+        borderRadius: BorderRadius.circular(AppColors.r20),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.grey[100],
+              color: AppColors.goldSoft,
               shape: BoxShape.circle,
             ),
             child: Icon(
               Icons.assignment_outlined,
               size: 60,
-              color: Colors.grey[400],
+              color: AppColors.goldColor,
             ),
           ),
           const SizedBox(height: 20),
@@ -720,7 +726,7 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: Colors.grey[700],
+              color: Colors.white,
             ),
           ),
           const SizedBox(height: 8),
@@ -730,7 +736,7 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
                 : "No assignments have been created yet",
             style: TextStyle(
               fontSize: 14,
-              color: Colors.grey[500],
+              color: AppColors.textSecondary,
             ),
             textAlign: TextAlign.center,
           ),
@@ -745,7 +751,8 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
     setState(() => isSaving = true);
 
     try {
-      await _saveAssignmentToFirebase(
+      final provider = context.read<CommitteesProvider>();
+      await provider.saveWinnerManual(
         committeeId: widget.committeeId,
         monthKey: selectedMonth!,
         memberId: selectedMemberId!,
@@ -756,12 +763,11 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
           selectedMonth = null;
           selectedMemberId = null;
         });
-        // Refresh committee data to update assignments list
         await fetchCommittee();
 
         Fluttertoast.showToast(
           msg: "Assignment saved successfully!",
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.green,
           textColor: Colors.white,
           gravity: ToastGravity.BOTTOM,
         );
@@ -770,7 +776,7 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
       if (mounted) {
         Fluttertoast.showToast(
           msg: "Error: ${e.toString()}",
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.red,
           textColor: Colors.white,
           gravity: ToastGravity.BOTTOM,
         );
@@ -778,18 +784,5 @@ class _MemberAssignmentScreenState extends State<MemberAssignmentScreen> {
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
-  }
-
-  Future<void> _saveAssignmentToFirebase({
-    required String committeeId,
-    required String monthKey,
-    required String memberId,
-  }) async {
-    final provider = context.read<CommitteesProvider>();
-    await provider.saveWinnerManual(
-      committeeId: committeeId,
-      monthKey: monthKey,
-      memberId: memberId,
-    );
   }
 }

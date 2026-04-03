@@ -11,6 +11,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../constants/app_colors.dart';
 import '../../providers/profile_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/custom_app_bar.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../services/error_handler.dart';
 import 'package:intl/intl.dart';
@@ -780,15 +781,16 @@ Please help me with:
         }
       } catch (e) {
         setState(() => _isSaving = false);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to logout: ${e.toString()}'),
-              backgroundColor: AppColors.red,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
+        print("error when logout: ${e.toString()}");
+        // if (mounted) {
+        //   ScaffoldMessenger.of(context).showSnackBar(
+        //     SnackBar(
+        //       content: Text('Failed to logout: ${e.toString()}'),
+        //       backgroundColor: AppColors.red,
+        //       behavior: SnackBarBehavior.floating,
+        //     ),
+        //   );
+        // }
       }
     } catch (e) {
       if (mounted) {
@@ -886,18 +888,9 @@ Please help me with:
         isLoading: _isSaving,
         child: Scaffold(
           backgroundColor: AppColors.bg,
-          appBar: AppBar(
-            backgroundColor: AppColors.surfaceDark,
-            elevation: 0,
-            automaticallyImplyLeading: false,
-            title: const Text(
-              "Profile",
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
-              ),
-            ),
+          appBar: CustomAppBar(
+            title: "Profile",
+            showBackButton: false,
             centerTitle: true,
             actions: [
               if (!_isLoading && _userData != null && !_isEditing)

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../constants/app_colors.dart';
 import '../../providers/committees_provider.dart';
+import '../../widgets/custom_app_bar.dart';
 import 'add_user_payment.dart';
 import 'committee_members_screen.dart';
 import 'winners_list_screen.dart';
@@ -26,7 +27,6 @@ class _MyCommitteesScreenState extends State<MyCommitteesScreen> with AutomaticK
   @override
   void initState() {
     super.initState();
-    // Set loading to true immediately when screen initializes
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<CommitteesProvider>();
       provider.isLoading = true;
@@ -37,21 +37,12 @@ class _MyCommitteesScreenState extends State<MyCommitteesScreen> with AutomaticK
 
   void _fetchCommittees() {
     if (!mounted) return;
-
     final provider = context.read<CommitteesProvider>();
-
-    // Only show loading if we have no committees and it's the first load
     if (provider.committees.isEmpty && !_isInitialLoadComplete) {
       provider.isLoading = true;
       provider.notifyListeners();
     }
-
-    // Since fetchUserCommittees doesn't return a Future, we can't use .then()
-    // Instead, we need to listen to the provider's state changes
     provider.fetchUserCommittees(widget.userId);
-
-    // We'll set initial load complete after a short delay
-    // The actual data will come through the provider's listeners
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) {
         setState(() {
@@ -75,8 +66,7 @@ class _MyCommitteesScreenBody extends StatelessWidget {
   final String userId;
   const _MyCommitteesScreenBody({super.key, required this.userId});
 
-  // Pakistan Rupee symbol
-  static const String _rupeeSymbol = 'Rs. ';
+  static const String _currencySymbol = '\$';
 
   String _formatDateRange(Timestamp? start, Timestamp? end) {
     if (start == null || end == null) return "";
@@ -93,100 +83,52 @@ class _MyCommitteesScreenBody extends StatelessWidget {
     return months[month - 1];
   }
 
-  String _getCommitteeTypeIcon(String type) {
-    return type.toLowerCase() == "daily" ? "📅 Daily" : "📆 Monthly";
-  }
-
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case "active":
-        return Colors.green;
+        return AppColors.green;
       case "completed":
-        return Colors.orange;
+        return AppColors.orange;
       case "inactive":
-        return Colors.red;
+        return AppColors.red;
       default:
         return AppColors.textSecondary;
     }
   }
 
-  String _formatPakistaniRupee(int amount) {
-    if (amount >= 10000000) { // Crore
-      return '${(amount / 10000000).toStringAsFixed(2)} Cr';
-    } else if (amount >= 100000) { // Lakh
-      return '${(amount / 100000).toStringAsFixed(2)} Lac';
-    } else {
-      String numStr = amount.toString();
-      String result = '';
-      int len = numStr.length;
-
-      if (len > 3) {
-        result = numStr.substring(len - 3);
-        numStr = numStr.substring(0, len - 3);
-
-        while (numStr.isNotEmpty) {
-          if (numStr.length >= 2) {
-            result = numStr.substring(numStr.length - 2) + ',' + result;
-            numStr = numStr.substring(0, numStr.length - 2);
-          } else {
-            result = numStr + ',' + result;
-            numStr = '';
-          }
-        }
-        return result;
-      }
-      return amount.toString();
+  String _formatAmount(int amount) {
+    if (amount >= 1000000000) {
+      return '${(amount / 1000000000).toStringAsFixed(1)}B';
+    } else if (amount >= 1000000) {
+      return '${(amount / 1000000).toStringAsFixed(1)}M';
+    } else if (amount >= 1000) {
+      return '${(amount / 1000).toStringAsFixed(1)}K';
     }
+    return amount.toString();
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<CommitteesProvider>();
+    final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundDark,
-      appBar: AppBar(
-        backgroundColor: AppColors.primaryColor,
-        elevation: 4,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          "My Committees",
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-              provider.isLoading = true;
-              provider.notifyListeners();
-              provider.fetchUserCommittees(userId);
-            },
-            tooltip: "Refresh",
-          ),
-        ],
+      backgroundColor: AppColors.bg,
+      appBar: CustomAppBar(
+        title: "My Committees",
+        showBackButton: false,
       ),
-      body: _buildBody(context, provider),
+      body: _buildBody(context, provider, screenWidth),
     );
   }
 
-  Widget _buildBody(BuildContext context, CommitteesProvider provider) {
-    // ✅ Show loading on first load (when committees are empty and loading is true)
+  Widget _buildBody(BuildContext context, CommitteesProvider provider, double screenWidth) {
     if (provider.isLoading && provider.committees.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(
-              color: AppColors.primaryColor,
-            ),
+            CircularProgressIndicator(color: AppColors.goldColor),
             SizedBox(height: 16),
             Text(
               "Loading your committees...",
@@ -197,7 +139,6 @@ class _MyCommitteesScreenBody extends StatelessWidget {
       );
     }
 
-    // Show error if any (only when not loading)
     if (provider.error != null && !provider.isLoading) {
       return Center(
         child: Padding(
@@ -208,21 +149,18 @@ class _MyCommitteesScreenBody extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: AppColors.error.withOpacity(0.1),
+                  color: AppColors.red.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.error_outline,
-                  size: 48,
-                  color: AppColors.error,
-                ),
+                child: Icon(Icons.error_outline, size: 48, color: AppColors.red),
               ),
               const SizedBox(height: 16),
               Text(
                 "Error Loading Committees",
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: Colors.white,
+                style: TextStyle(
+                  fontSize: 20,
                   fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
               const SizedBox(height: 8),
@@ -241,13 +179,10 @@ class _MyCommitteesScreenBody extends StatelessWidget {
                 icon: const Icon(Icons.refresh),
                 label: const Text("Try Again"),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryColor,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
+                  backgroundColor: AppColors.goldColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppColors.r12),
                   ),
                 ),
               ),
@@ -257,7 +192,6 @@ class _MyCommitteesScreenBody extends StatelessWidget {
       );
     }
 
-    // ✅ Show empty state only when committees are empty AND not loading
     if (provider.committees.isEmpty && !provider.isLoading) {
       return Center(
         child: SingleChildScrollView(
@@ -268,33 +202,30 @@ class _MyCommitteesScreenBody extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceDark,
+                  color: AppColors.goldSoft,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.primaryColor.withOpacity(0.3),
-                    width: 2,
-                  ),
                 ),
                 child: Icon(
                   Icons.group_off_rounded,
                   size: 64,
-                  color: AppColors.primaryColor.withOpacity(0.5),
+                  color: AppColors.goldColor,
                 ),
               ),
               const SizedBox(height: 24),
               Text(
                 "No Committees Found",
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Colors.white,
+                style: TextStyle(
+                  fontSize: screenWidth < 400 ? 20 : 24,
                   fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
-                "You haven't joined or created any committees yet.\nUse the quick actions on home screen to get started.",
+              Text(
+                "You haven't joined or created any committees yet.\nCreate a committee or join using a committee code.",
                 style: TextStyle(
                   color: AppColors.textSecondary,
-                  fontSize: 16,
+                  fontSize: screenWidth < 400 ? 12 : 14,
                   height: 1.5,
                 ),
                 textAlign: TextAlign.center,
@@ -305,33 +236,27 @@ class _MyCommitteesScreenBody extends StatelessWidget {
       );
     }
 
-    // Show committees list
     return RefreshIndicator(
       onRefresh: () async {
         provider.isLoading = true;
         provider.notifyListeners();
         provider.fetchUserCommittees(userId);
-        // Small delay to ensure loading state is shown
         await Future.delayed(const Duration(milliseconds: 100));
       },
-      color: AppColors.primaryColor,
+      color: AppColors.goldColor,
       backgroundColor: AppColors.surfaceDark,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: provider.committees.length,
         itemBuilder: (context, index) {
           final committee = provider.committees[index];
-          return _buildCommitteeCard(context, committee, provider);
+          return _buildCommitteeCard(context, committee, provider, screenWidth);
         },
       ),
     );
   }
 
-  Widget _buildCommitteeCard(BuildContext context, Map<String, dynamic> committee, CommitteesProvider provider) {
-    final startTimestamp = committee["startMonth"] as Timestamp?;
-    final endTimestamp = committee["endMonth"] as Timestamp?;
-    final dateRange = _formatDateRange(startTimestamp, endTimestamp);
-
+  Widget _buildCommitteeCard(BuildContext context, Map<String, dynamic> committee, CommitteesProvider provider, double screenWidth) {
     final status = committee["status"] ?? "Inactive";
     final isActive = status.toLowerCase() == "active";
     final committeeCode = committee["committeeCode"] ?? "N/A";
@@ -342,450 +267,407 @@ class _MyCommitteesScreenBody extends StatelessWidget {
     final totalAmount = (committee["totalAmount"] ?? 0).toInt();
     final isAdmin = userId == (committee["adminId"] ?? "");
 
-    // Calculate progress
-    final currentMonth = committee["currentMonth"] ?? 1;
-    final totalMonths = committee["totalMonths"] ?? 1;
-    final progress = currentMonth / totalMonths;
-
-    // Calculate collection percentage
-    final membersPayments = Map<String, dynamic>.from(committee["membersPayments"] ?? {});
-    double totalPaid = 0;
-    membersPayments.forEach((_, payments) {
-      if (payments is Map) {
-        payments.forEach((_, value) {
-          if (value is Map && value["amount"] != null) {
-            totalPaid += (value["amount"] as num).toDouble();
-          }
-        });
-      }
-    });
-    final collectionPercentage = totalAmount > 0 ? (totalPaid / totalAmount).toDouble() : 0.0;
+    // Responsive values
+    final cardPadding = screenWidth < 400 ? 12.0 : 16.0;
+    final iconSize = screenWidth < 400 ? 40.0 : 50.0;
+    final fontSize = screenWidth < 400 ? 14.0 : 16.0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.surfaceDark,
-            AppColors.surfaceDark.withOpacity(0.8),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(20),
+        color: AppColors.surfaceDark,
+        borderRadius: BorderRadius.circular(AppColors.r16),
         border: Border.all(
-          color: isActive
-              ? AppColors.primaryColor.withOpacity(0.3)
-              : Colors.white.withOpacity(0.1),
-          width: 1,
+          color: isActive ? AppColors.goldColor.withOpacity(0.3) : AppColors.border,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => _showCommitteeDetails(context, committee),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header with Type and Status
-                  Row(
+      child: Padding(
+        padding: EdgeInsets.all(cardPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Row
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: iconSize,
+                  height: iconSize,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.goldColor,
+                        AppColors.goldColor.withOpacity(0.7),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(AppColors.r12),
+                  ),
+                  child: Center(
+                    child: Text(
+                      committee["name"]?[0]?.toUpperCase() ?? "C",
+                      style: TextStyle(
+                        fontSize: screenWidth < 400 ? 20.0 : 24.0,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        committee["name"] ?? "Unnamed Committee",
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.person_outline, size: 12, color: AppColors.textSecondary),
+                              const SizedBox(width: 4),
+                              Text(
+                                adminName,
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (isAdmin)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.goldSoft,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                "Admin",
+                                style: TextStyle(
+                                  color: AppColors.goldColor,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _getStatusColor(status).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _getStatusColor(status).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
+                        width: 6,
+                        height: 6,
                         decoration: BoxDecoration(
-                          color: AppColors.primaryColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: AppColors.primaryColor.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Text(
-                          _getCommitteeTypeIcon(type),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w500,
-                          ),
+                          color: _getStatusColor(status),
+                          shape: BoxShape.circle,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 4),
+                      Text(
+                        status,
+                        style: TextStyle(
+                          color: _getStatusColor(status),
+                          fontWeight: FontWeight.w600,
+                          fontSize: screenWidth < 400 ? 9.0 : 10.0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Stats Row
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 400) {
+                  return Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildSimpleStat(
+                              value: "$totalMembers",
+                              label: "Members",
+                              icon: Icons.people_outline,
+                              screenWidth: screenWidth,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildSimpleStat(
+                              value: "$_currencySymbol${_formatAmount(monthlyAmount)}",
+                              label: type == "daily" ? "Per Day" : "Per Month",
+                              icon: Icons.attach_money,
+                              screenWidth: screenWidth,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildSimpleStat(
+                              value: "$_currencySymbol${_formatAmount(totalAmount)}",
+                              label: "Total",
+                              icon: Icons.account_balance_wallet_outlined,
+                              screenWidth: screenWidth,
+                            ),
+                          ),
+                          const Expanded(child: SizedBox()),
+                        ],
+                      ),
+                    ],
+                  );
+                } else {
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: _buildSimpleStat(
+                          value: "$totalMembers",
+                          label: "Members",
+                          icon: Icons.people_outline,
+                          screenWidth: screenWidth,
+                        ),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 40,
+                        color: AppColors.border,
+                      ),
+                      Expanded(
+                        child: _buildSimpleStat(
+                          value: "$_currencySymbol${_formatAmount(monthlyAmount)}",
+                          label: type == "daily" ? "Per Day" : "Per Month",
+                          icon: Icons.attach_money,
+                          screenWidth: screenWidth,
+                        ),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 40,
+                        color: AppColors.border,
+                      ),
+                      Expanded(
+                        child: _buildSimpleStat(
+                          value: "$_currencySymbol${_formatAmount(totalAmount)}",
+                          label: "Total",
+                          icon: Icons.account_balance_wallet_outlined,
+                          screenWidth: screenWidth,
+                        ),
+                      ),
+                    ],
+                  );
+                }
+              },
+            ),
+
+            const SizedBox(height: 16),
+
+            // Committee Code & Share Section
+            Container(
+              padding: EdgeInsets.all(screenWidth < 400 ? 8.0 : 12.0),
+              decoration: BoxDecoration(
+                color: AppColors.surface2,
+                borderRadius: BorderRadius.circular(AppColors.r12),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.code, size: 16, color: AppColors.goldColor),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              committee["name"] ?? "Unnamed Committee",
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _getStatusColor(status).withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: _getStatusColor(status).withOpacity(0.3),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: _getStatusColor(status),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              status,
+                              "Committee Code",
                               style: TextStyle(
-                                color: _getStatusColor(status),
+                                fontSize: 10,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            Text(
+                              committeeCode,
+                              style: TextStyle(
+                                fontSize: screenWidth < 400 ? 12.0 : 14.0,
                                 fontWeight: FontWeight.w600,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Admin Info
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.person_outline,
-                        size: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        "Created by $adminName",
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                      if (isAdmin) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text(
-                            "Admin",
-                            style: TextStyle(
-                              color: AppColors.primaryColor,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Progress Section
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.03),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      children: [
-                        // Collection Progress
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              "Collection Progress",
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.primaryColor.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                "${(collectionPercentage * 100).toStringAsFixed(1)}%",
-                                style: const TextStyle(
-                                  color: AppColors.primaryColor,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(3),
-                          child: LinearProgressIndicator(
-                            value: collectionPercentage,
-                            backgroundColor: Colors.white.withOpacity(0.1),
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              AppColors.primaryColor,
-                            ),
-                            minHeight: 4,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-
-                        // Duration Progress
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              "Duration Progress",
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                            Text(
-                              "$currentMonth/$totalMonths months",
-                              style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 12,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: committeeCode));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text("Code copied to clipboard"),
+                              backgroundColor: AppColors.goldColor,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppColors.r12),
+                              ),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.goldSoft,
+                            borderRadius: BorderRadius.circular(AppColors.r8),
+                          ),
+                          child: Icon(Icons.copy, size: 16, color: AppColors.goldColor),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.goldSoft,
+                      borderRadius: BorderRadius.circular(AppColors.r8),
+                    ),
+                    child: InkWell(
+                      onTap: () {
+                        _showShareDialog(context, committeeCode, committee["name"] ?? "Committee", screenWidth);
+                      },
+                      borderRadius: BorderRadius.circular(AppColors.r8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.share, size: 16, color: AppColors.goldColor),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              "Share code with friends to join",
+                              style: TextStyle(
+                                fontSize: screenWidth < 400 ? 10.0 : 12.0,
+                                color: AppColors.goldColor,
                                 fontWeight: FontWeight.w500,
                               ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(3),
-                          child: LinearProgressIndicator(
-                            value: progress,
-                            backgroundColor: Colors.white.withOpacity(0.1),
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              Colors.blue,
-                            ),
-                            minHeight: 4,
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
+                ],
+              ),
+            ),
 
-                  const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-                  // Stats Grid
-                  Row(
+            // Action Buttons - Responsive
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 450) {
+                  return Column(
                     children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          label: "Members",
-                          value: "$totalMembers",
-                          icon: Icons.people,
-                          color: Colors.blue,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildActionButton(
+                              icon: Icons.people_outline,
+                              label: "View Members",
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => CommitteeMembersScreen(
+                                      committeeId: committee["id"],
+                                    ),
+                                  ),
+                                );
+                              },
+                              screenWidth: screenWidth,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _buildStatCard(
-                          label: type == "daily" ? "Per Day" : "Per Month",
-                          value: "$_rupeeSymbol${_formatPakistaniRupee(monthlyAmount)}",
-                          icon: Icons.currency_rupee,
-                          color: Colors.green,
+                      if (isAdmin) ...[
+                        const SizedBox(height: 8),
+                        _buildActionButton(
+                          icon: Icons.payment_outlined,
+                          label: "Add Payment",
+                          isGold: true,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AddUserPayment(
+                                  committeeId: committee["id"],
+                                  currentUserId: userId,
+                                ),
+                              ),
+                            );
+                          },
+                          screenWidth: screenWidth,
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _buildStatCard(
-                          label: "Total",
-                          value: "$_rupeeSymbol${_formatPakistaniRupee(totalAmount)}",
-                          icon: Icons.account_balance_wallet,
-                          color: Colors.orange,
-                        ),
-                      ),
+                      ],
                     ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Date Range
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.03),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.date_range,
-                          size: 16,
-                          color: AppColors.textSecondary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            dateRange.isNotEmpty ? dateRange : "Dates not set",
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Committee Code Section
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.primaryColor.withOpacity(0.2),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                "Committee Code",
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                committeeCode,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  letterSpacing: 1.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              Clipboard.setData(
-                                ClipboardData(text: committeeCode),
-                              );
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Text(
-                                    "Code copied to clipboard",
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                  backgroundColor: AppColors.success,
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  margin: const EdgeInsets.all(16),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            },
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: AppColors.primaryColor.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                Icons.copy,
-                                color: AppColors.primaryColor,
-                                size: 18,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Action Buttons
-                  Row(
+                  );
+                } else {
+                  return Row(
                     children: [
                       Expanded(
                         child: _buildActionButton(
                           icon: Icons.people_outline,
-                          label: "Members",
+                          label: "View Members",
                           onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => CommitteeMembersScreen(
-                                  committeeId: committee["id"], committeeName: committee["name"],
+                                  committeeId: committee["id"],
                                 ),
                               ),
                             );
                           },
+                          screenWidth: screenWidth,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: _buildActionButton(
                           icon: Icons.emoji_events_outlined,
-                          label: "Winners",
+                          label: "See Assigned Members",
                           onTap: () {
                             Navigator.push(
                               context,
@@ -796,6 +678,7 @@ class _MyCommitteesScreenBody extends StatelessWidget {
                               ),
                             );
                           },
+                          screenWidth: screenWidth,
                         ),
                       ),
                       if (isAdmin) ...[
@@ -804,7 +687,7 @@ class _MyCommitteesScreenBody extends StatelessWidget {
                           child: _buildActionButton(
                             icon: Icons.payment_outlined,
                             label: "Add Payment",
-                            color: Colors.green,
+                            isGold: true,
                             onTap: () {
                               Navigator.push(
                                 context,
@@ -816,57 +699,55 @@ class _MyCommitteesScreenBody extends StatelessWidget {
                                 ),
                               );
                             },
+                            screenWidth: screenWidth,
                           ),
                         ),
                       ],
                     ],
-                  ),
-                ],
-              ),
+                  );
+                }
+              },
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildStatCard({
-    required String label,
+  Widget _buildSimpleStat({
     required String value,
+    required String label,
     required IconData icon,
-    required Color color,
+    required double screenWidth,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+    final fontSize = screenWidth < 400 ? 12.0 : 14.0;
+    final labelSize = screenWidth < 400 ? 9.0 : 10.0;
+    final iconSize = screenWidth < 400 ? 16.0 : 18.0;
+
+    return Column(
+      children: [
+        Icon(icon, size: iconSize, color: AppColors.goldColor),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: fontSize,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
           ),
-          Text(
-            label,
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 8,
-            ),
-            textAlign: TextAlign.center,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: labelSize,
+            color: AppColors.textSecondary,
           ),
-        ],
-      ),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 
@@ -874,33 +755,38 @@ class _MyCommitteesScreenBody extends StatelessWidget {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
-    Color color = AppColors.primaryColor,
+    required double screenWidth,
+    bool isGold = false,
   }) {
+    final fontSize = screenWidth < 400 ? 10.0 : 12.0;
+    final iconSize = screenWidth < 400 ? 16.0 : 18.0;
+    final padding = screenWidth < 400 ? 8.0 : 12.0;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppColors.r12),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: EdgeInsets.symmetric(vertical: padding),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: color.withOpacity(0.2),
-              width: 0.5,
-            ),
+            color: isGold ? AppColors.goldSoft : AppColors.surface2,
+            borderRadius: BorderRadius.circular(AppColors.r12),
           ),
-          child: Column(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: color, size: 16),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
+              Icon(icon, size: iconSize, color: isGold ? AppColors.goldColor : AppColors.textSecondary),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: isGold ? AppColors.goldColor : AppColors.textSecondary,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -910,15 +796,156 @@ class _MyCommitteesScreenBody extends StatelessWidget {
     );
   }
 
-  void _showCommitteeDetails(BuildContext context, Map<String, dynamic> committee) {
+  void _showShareDialog(BuildContext context, String committeeCode, String committeeName, double screenWidth) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) => Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.surfaceDark,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(AppColors.r20)),
+        ),
+        padding: EdgeInsets.all(screenWidth < 400 ? 16.0 : 24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.goldColor.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              width: screenWidth < 400 ? 60.0 : 70.0,
+              height: screenWidth < 400 ? 60.0 : 70.0,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.goldColor, AppColors.goldColor.withOpacity(0.7)],
+                ),
+                borderRadius: BorderRadius.circular(AppColors.r16),
+              ),
+              child: Icon(Icons.share, size: screenWidth < 400 ? 30.0 : 35.0, color: Colors.white),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              "Invite Friends",
+              style: TextStyle(
+                fontSize: screenWidth < 400 ? 20.0 : 22.0,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Share this code with friends to join\n$committeeName",
+              style: TextStyle(
+                fontSize: screenWidth < 400 ? 12.0 : 14.0,
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Container(
+              padding: EdgeInsets.all(screenWidth < 400 ? 12.0 : 16.0),
+              decoration: BoxDecoration(
+                color: AppColors.surface2,
+                borderRadius: BorderRadius.circular(AppColors.r12),
+                border: Border.all(color: AppColors.goldColor.withOpacity(0.3)),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    "Committee Code",
+                    style: TextStyle(
+                      fontSize: screenWidth < 400 ? 10.0 : 12.0,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    committeeCode,
+                    style: TextStyle(
+                      fontSize: screenWidth < 400 ? 24.0 : 28.0,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.goldColor,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: committeeCode));
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text("Code copied!"),
+                              backgroundColor: AppColors.goldColor,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        icon: Icon(Icons.copy, color: AppColors.goldColor, size: screenWidth < 400 ? 20.0 : 24.0),
+                      ),
+                      const SizedBox(width: 16),
+                      IconButton(
+                        onPressed: () {
+                          // Implement share functionality
+                          Navigator.pop(context);
+                        },
+                        icon: Icon(Icons.share, color: AppColors.goldColor, size: screenWidth < 400 ? 20.0 : 24.0),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.goldColor,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppColors.r12),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: const Text("Close", style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCommitteeDetails(BuildContext context, Map<String, dynamic> committee) {
+    final startTimestamp = committee["startMonth"] as Timestamp?;
+    final endTimestamp = committee["endMonth"] as Timestamp?;
+    final dateRange = _formatDateRange(startTimestamp, endTimestamp);
+    final status = committee["status"] ?? "Inactive";
+    final monthlyAmount = (committee["monthlyAmount"] ?? 0).toInt();
+    final totalAmount = (committee["totalAmount"] ?? 0).toInt();
+    final totalMembers = committee["totalMembers"] ?? 0;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.surfaceDark,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(AppColors.r20)),
         ),
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -928,37 +955,92 @@ class _MyCommitteesScreenBody extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
+                color: AppColors.goldColor.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              committee["name"] ?? "Committee Details",
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.goldColor, AppColors.goldColor.withOpacity(0.7)],
+                ),
+                borderRadius: BorderRadius.circular(AppColors.r16),
+              ),
+              child: Center(
+                child: Text(
+                  committee["name"]?[0]?.toUpperCase() ?? "C",
+                  style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
               ),
             ),
             const SizedBox(height: 16),
+            Text(
+              committee["name"] ?? "Committee Details",
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
             _buildDetailRow("Type", committee["type"] ?? "Monthly"),
-            _buildDetailRow("Members", "${committee["totalMembers"] ?? 0}"),
-            _buildDetailRow("Monthly Amount", "$_rupeeSymbol${_formatPakistaniRupee((committee["monthlyAmount"] ?? 0).toInt())}"),
-            _buildDetailRow("Total Amount", "$_rupeeSymbol${_formatPakistaniRupee((committee["totalAmount"] ?? 0).toInt())}"),
-            _buildDetailRow("Status", committee["status"] ?? "Inactive", isStatus: true),
+            _buildDetailRow("Members", "$totalMembers"),
+            _buildDetailRow("Per Month", "$_currencySymbol${_formatAmount(monthlyAmount)}"),
+            _buildDetailRow("Total Amount", "$_currencySymbol${_formatAmount(totalAmount)}"),
+            _buildDetailRow("Date Range", dateRange),
+            _buildDetailRow("Status", status, isStatus: true),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surface2,
+                borderRadius: BorderRadius.circular(AppColors.r12),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.code, size: 16, color: AppColors.goldColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      committee["committeeCode"] ?? "N/A",
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: committee["committeeCode"] ?? ""));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Code copied")),
+                      );
+                    },
+                    child: Icon(Icons.copy, size: 16, color: AppColors.goldColor),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(context),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryColor,
+                  backgroundColor: AppColors.goldColor,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppColors.r12),
                   ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                child: const Text("Close"),
+                child: const Text("Close", style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -975,14 +1057,11 @@ class _MyCommitteesScreenBody extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-            ),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
           if (isStatus)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: _getStatusColor(value).withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
