@@ -60,12 +60,19 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   cached_network_image: ^3.3.0
+  smooth_page_indicator: ^1.1.0
+  google_sign_in: ^6.1.0
+
+
+
+
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
-  flutter_native_splash: ^2.3.1
 
 flutter:
 
@@ -73,6 +80,9 @@ flutter:
 
   assets:
     - assets/images/app_icon.png
+    - assets/animations/group_chat.json
+    - assets/animations/create_committee.json
+    - assets/animations/join_committee.json
 
 flutter_icons:
   android: true
