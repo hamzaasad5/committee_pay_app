@@ -119,7 +119,7 @@ class _OnboardingScreen2State extends State<OnboardingScreen2>
                               shaderCallback: (bounds) => LinearGradient(
                                 colors: [
                                   AppColors.secondaryColor,
-                                  AppColors.primaryColor,
+                                  AppColors.goldColor,
                                 ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
@@ -163,7 +163,7 @@ class _OnboardingScreen2State extends State<OnboardingScreen2>
                               end: Alignment.bottomRight,
                               colors: [
                                 AppColors.secondaryColor.withOpacity(0.05),
-                                AppColors.primaryColor.withOpacity(0.02),
+                                AppColors.goldColor.withOpacity(0.02),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(AppColors.borderRadiusLarge),
@@ -219,7 +219,7 @@ class _OnboardingScreen2State extends State<OnboardingScreen2>
                     child: OutlinedButton(
                       onPressed: widget.onBack,
                       style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: AppColors.primaryColor),
+                        side: BorderSide(color: AppColors.goldColor),
                         minimumSize: const Size(0, 50),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(AppColors.borderRadiusMedium),
@@ -263,7 +263,7 @@ class _OnboardingScreen2State extends State<OnboardingScreen2>
           height: 32,
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [AppColors.secondaryColor, AppColors.primaryColor],
+              colors: [AppColors.secondaryColor, AppColors.goldColor],
             ),
             shape: BoxShape.circle,
           ),

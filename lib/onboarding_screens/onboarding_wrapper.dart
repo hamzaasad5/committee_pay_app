@@ -78,7 +78,7 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
                     controller: _pageController,
                     count: 3,
                     effect: const WormEffect(
-                      activeDotColor: AppColors.primaryColor,
+                      activeDotColor: AppColors.goldColor,
                       dotHeight: 8,
                       dotWidth: 8,
                       spacing: 8,

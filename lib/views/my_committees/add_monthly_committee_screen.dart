@@ -158,7 +158,7 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.dark(
-              primary: AppColors.primaryColor,
+              primary: AppColors.goldColor,
               onPrimary: Colors.white,
               surface: AppColors.surfaceDark,
               onSurface: Colors.white,
@@ -336,14 +336,14 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.primaryColor.withOpacity(0.1),
+                color: AppColors.goldColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.primaryColor),
+                border: Border.all(color: AppColors.goldColor),
               ),
               child: SelectableText(
                 code,
                 style: const TextStyle(
-                  color: AppColors.primaryColor,
+                  color: AppColors.goldColor,
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 2,
@@ -382,7 +382,7 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
             icon: const Icon(Icons.share),
             label: const Text("Share"),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryColor,
+              backgroundColor: AppColors.goldColor,
             ),
           ),
         ],
@@ -423,7 +423,7 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
         child: Scaffold(
           backgroundColor: AppColors.backgroundDark,
           appBar: AppBar(
-            backgroundColor: AppColors.primaryColor,
+            backgroundColor: AppColors.goldColor,
             elevation: 0,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -452,7 +452,7 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
                       color: AppColors.surfaceDark,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: AppColors.primaryColor.withOpacity(0.3),
+                        color: AppColors.goldColor.withOpacity(0.3),
                       ),
                     ),
                     child: Row(
@@ -460,12 +460,12 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: AppColors.primaryColor.withOpacity(0.1),
+                            color: AppColors.goldColor.withOpacity(0.1),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
                             Icons.calendar_month,
-                            color: AppColors.primaryColor,
+                            color: AppColors.goldColor,
                             size: 24,
                           ),
                         ),
@@ -585,7 +585,7 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: _startMonth != null
-                              ? AppColors.primaryColor
+                              ? AppColors.goldColor
                               : Colors.white.withOpacity(0.1),
                           width: _startMonth != null ? 2 : 1,
                         ),
@@ -595,7 +595,7 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
                           Icon(
                             Icons.calendar_today,
                             color: _startMonth != null
-                                ? AppColors.primaryColor
+                                ? AppColors.goldColor
                                 : AppColors.textSecondary,
                             size: 20,
                           ),
@@ -706,13 +706,13 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            AppColors.primaryColor.withOpacity(0.2),
+                            AppColors.goldColor.withOpacity(0.2),
                             AppColors.surfaceDark,
                           ],
                         ),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: AppColors.primaryColor.withOpacity(0.3),
+                          color: AppColors.goldColor.withOpacity(0.3),
                         ),
                       ),
                       child: Column(
@@ -808,12 +808,12 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
                     child: ElevatedButton(
                       onPressed: (_isCreating || _isDuplicatePrevented) ? null : _createCommittee,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
+                        backgroundColor: AppColors.goldColor,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
                         elevation: 0,
-                        disabledBackgroundColor: AppColors.primaryColor.withOpacity(0.5),
+                        disabledBackgroundColor: AppColors.goldColor.withOpacity(0.5),
                       ),
                       child: _isCreating
                           ? Row(
@@ -887,7 +887,7 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: AppColors.primaryColor.withOpacity(0.1),
+                              color: AppColors.goldColor.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
@@ -974,7 +974,7 @@ class _MonthlyCommitteeScreenState extends State<MonthlyCommitteeScreen> {
           labelStyle: TextStyle(color: AppColors.textSecondary),
           hintText: hint,
           hintStyle: TextStyle(color: AppColors.textSecondary.withOpacity(0.5)),
-          prefixIcon: Icon(icon, color: AppColors.primaryColor),
+          prefixIcon: Icon(icon, color: AppColors.goldColor),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,

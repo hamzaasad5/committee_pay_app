@@ -164,7 +164,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.dark(
-              primary: AppColors.primaryColor,
+              primary: AppColors.goldColor,
               onPrimary: Colors.white,
               surface: AppColors.surfaceDark,
               onSurface: Colors.white,
@@ -333,12 +333,12 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
+                color: AppColors.goldColor,
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.check_circle,
-                color: Colors.green,
+                color: AppColors.goldColor,
                 size: 48,
               ),
             ),
@@ -352,14 +352,14 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.primaryColor.withOpacity(0.1),
+                color: AppColors.goldColor,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.primaryColor),
+                border: Border.all(color: AppColors.goldColor),
               ),
               child: SelectableText(
                 code,
                 style: const TextStyle(
-                  color: AppColors.primaryColor,
+                  color: AppColors.goldColor,
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 2,
@@ -374,7 +374,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
             const SizedBox(height: 4),
             Text(
               "Total Value: ${_rupeeSymbol}${_formatPakistaniRupee(_totalAmount!)}",
-              style: const TextStyle(color: Colors.green, fontSize: 14, fontWeight: FontWeight.bold),
+              style: const TextStyle(color: AppColors.goldColor, fontSize: 14, fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -397,7 +397,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
             icon: const Icon(Icons.share),
             label: const Text("Share"),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryColor,
+              backgroundColor: AppColors.goldColor,
             ),
           ),
         ],
@@ -439,7 +439,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
         child: Scaffold(
           backgroundColor: AppColors.backgroundDark,
           appBar: AppBar(
-            backgroundColor: AppColors.primaryColor,
+            backgroundColor: AppColors.goldColor,
             elevation: 0,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -468,7 +468,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
                       color: AppColors.surfaceDark,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: AppColors.primaryColor.withOpacity(0.3),
+                        color: AppColors.goldColor,
                       ),
                     ),
                     child: Row(
@@ -476,12 +476,12 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: AppColors.primaryColor.withOpacity(0.1),
+                            color: AppColors.goldColor,
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
                             Icons.today,
-                            color: AppColors.primaryColor,
+                            color: AppColors.goldColor,
                             size: 24,
                           ),
                         ),
@@ -601,7 +601,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: _startDate != null
-                              ? AppColors.primaryColor
+                              ? AppColors.goldColor
                               : Colors.white.withOpacity(0.1),
                           width: _startDate != null ? 2 : 1,
                         ),
@@ -611,7 +611,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
                           Icon(
                             Icons.calendar_today,
                             color: _startDate != null
-                                ? AppColors.primaryColor
+                                ? AppColors.goldColor
                                 : AppColors.textSecondary,
                             size: 20,
                           ),
@@ -664,7 +664,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: _totalAmount != null
-                            ? Colors.green.withOpacity(0.3)
+                            ? AppColors.goldColor.withOpacity(0.3)
                             : Colors.white.withOpacity(0.1),
                       ),
                     ),
@@ -673,7 +673,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
                         Icon(
                           Icons.account_balance_wallet,
                           color: _totalAmount != null
-                              ? Colors.green
+                              ? AppColors.goldColor
                               : AppColors.textSecondary,
                           size: 20,
                         ),
@@ -696,7 +696,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
                                     : "Will be calculated automatically",
                                 style: TextStyle(
                                   color: _totalAmount != null
-                                      ? Colors.green
+                                      ? AppColors.goldColor
                                       : AppColors.textSecondary,
                                   fontSize: 18,
                                   fontWeight: _totalAmount != null
@@ -722,13 +722,13 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            AppColors.primaryColor.withOpacity(0.2),
+                            AppColors.goldColor,
                             AppColors.surfaceDark,
                           ],
                         ),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: AppColors.primaryColor.withOpacity(0.3),
+                          color: AppColors.goldColor,
                         ),
                       ),
                       child: Column(
@@ -824,12 +824,12 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
                     child: ElevatedButton(
                       onPressed: (_isCreating || _isDuplicatePrevented) ? null : _createCommittee,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
+                        backgroundColor: AppColors.goldColor,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
                         elevation: 0,
-                        disabledBackgroundColor: AppColors.primaryColor.withOpacity(0.5),
+                        disabledBackgroundColor: AppColors.goldColor,
                       ),
                       child: _isCreating
                           ? Row(
@@ -903,7 +903,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: AppColors.primaryColor.withOpacity(0.1),
+                              color: AppColors.goldColor,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
@@ -990,7 +990,7 @@ class _DailyCommitteeScreenState extends State<DailyCommitteeScreen> {
           labelStyle: TextStyle(color: AppColors.textSecondary),
           hintText: hint,
           hintStyle: TextStyle(color: AppColors.textSecondary.withOpacity(0.5)),
-          prefixIcon: Icon(icon, color: AppColors.primaryColor),
+          prefixIcon: Icon(icon, color: AppColors.goldColor),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,

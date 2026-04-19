@@ -213,7 +213,7 @@ class _AddUserPaymentState extends State<AddUserPayment> {
                 child: ElevatedButton(
                   onPressed: savePayment,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryColor,
+                    backgroundColor: AppColors.goldColor,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: const Text(

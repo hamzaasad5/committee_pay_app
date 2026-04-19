@@ -10,7 +10,6 @@ import '../../constants/app_colors.dart';
 import '../../models/user_model.dart';
 import '../../providers/committees_provider.dart';
 import '../../services/error_handler.dart';
-import '../../widgets/loading_overlay.dart';
 import '../chats/widgets/member_assignment_home.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,16 +20,21 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
-  final TextEditingController _joinCodeController = TextEditingController();
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  bool _isJoining = false;
-  String _selectedFilter = "Today";
-  User? _currentUser;
+    with AutomaticKeepAliveClientMixin {
+
+  final _joinCodeController = TextEditingController();
+  final _formKey            = GlobalKey<FormState>();
+
+  bool      _isJoining     = false;
+  bool      _isLoading     = true;
+  String    _selectedFilter = 'Today';
+
+  User?      _currentUser;
   UserModel? _userModel;
-  bool _isLoading = true;
   List<Map<String, dynamic>> _userCommittees = [];
+
   late CommitteesProvider _committeesProvider;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -38,62 +42,7 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _committeesProvider = CommitteesProvider();
-    _initializeUser();
-  }
-
-  Future<void> _initializeUser() async {
-    setState(() => _isLoading = true);
-    try {
-      _currentUser = FirebaseAuth.instance.currentUser;
-      if (_currentUser != null) {
-        await _loadUserData();
-        await _loadUserCommittees();
-      }
-    } catch (e) {
-      if (mounted) {
-        ErrorHandler.showError(context, 'Failed to initialize user data');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _loadUserData() async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(_currentUser!.uid)
-          .get();
-
-      if (doc.exists) {
-        _userModel = UserModel.fromFirestore(doc);
-      }
-    } catch (e) {
-      debugPrint('Error loading user data: $e');
-    }
-  }
-
-  Future<void> _loadUserCommittees() async {
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('committees')
-          .where('membersMap.${_currentUser!.uid}', isEqualTo: true)
-          .where('status', isEqualTo: 'active')
-          .orderBy('createdAt', descending: true)
-          .get();
-
-      setState(() {
-        _userCommittees = snapshot.docs.map((doc) {
-          final data = doc.data();
-          data['id'] = doc.id;
-          return data;
-        }).toList();
-      });
-    } catch (e) {
-      debugPrint('Error loading user committees: $e');
-    }
+    _init();
   }
 
   @override
@@ -103,173 +52,318 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
-  Query<Map<String, dynamic>> getActivityQuery() {
-    final now = DateTime.now();
-    DateTime start;
-    DateTime end;
-
+  Future<void> _init() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
     try {
-      switch (_selectedFilter) {
-        case "Today":
-          start = DateTime(now.year, now.month, now.day);
-          end = start.add(const Duration(days: 1));
-          break;
-        case "Yesterday":
-          start = DateTime(now.year, now.month, now.day)
-              .subtract(const Duration(days: 1));
-          end = start.add(const Duration(days: 1));
-          break;
-        default:
-          start = DateTime(2000);
-          end = now.add(const Duration(days: 1));
+      _currentUser = FirebaseAuth.instance.currentUser;
+      if (_currentUser != null) {
+        await Future.wait([_loadUserData(), _loadUserCommittees()]);
       }
-
-      return FirebaseFirestore.instance
-          .collection("activity")
-          .where("userId", isEqualTo: _currentUser?.uid)
-          .where("timestamp", isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-          .where("timestamp", isLessThan: Timestamp.fromDate(end))
-          .orderBy("timestamp", descending: true);
-    } catch (e) {
-      debugPrint('Error creating activity query: $e');
-      return FirebaseFirestore.instance
-          .collection("activity")
-          .where("userId", isEqualTo: _currentUser?.uid)
-          .orderBy("timestamp", descending: true);
+    } catch (_) {
+      if (mounted) ErrorHandler.showError(context, 'Failed to load data');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> joinCommittee() async {
-    if (!_formKey.currentState!.validate()) return;
+  Future<void> _loadUserData() async {
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_currentUser!.uid)
+        .get();
+    if (doc.exists) _userModel = UserModel.fromFirestore(doc);
+  }
 
-    if (_currentUser == null || _userModel == null) {
-      ErrorHandler.showError(context, 'User not logged in');
-      return;
+  Future<void> _loadUserCommittees() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('committees')
+        .where('membersMap.${_currentUser!.uid}', isEqualTo: true)
+        .where('status', isEqualTo: 'active')
+        .orderBy('createdAt', descending: true)
+        .get();
+    setState(() {
+      _userCommittees = snap.docs.map((d) {
+        final data = d.data();
+        data['id'] = d.id;
+        return data;
+      }).toList();
+    });
+  }
+
+  // ── Stats helpers ──────────────────────────────────────────────────────────
+
+  int get _totalPaid => _userCommittees
+      .where((c) {
+    final payments =
+    (c['membersPayments'] as Map?)?[_currentUser?.uid] as Map?;
+    if (payments == null) return false;
+    final month = DateFormat('yyyy-MM').format(DateTime.now());
+    return payments[month] == 'paid';
+  })
+      .length;
+
+  String _formatAmount(int amount) {
+    if (amount >= 100000) {
+      return 'Rs ${(amount / 100000).toStringAsFixed(1)} Lac';
+    }
+    if (amount >= 1000) return 'Rs ${(amount / 1000).toStringAsFixed(0)}K';
+    return 'Rs $amount';
+  }
+
+  int get _thisMonthTotal {
+    int total = 0;
+    for (final c in _userCommittees) {
+      total += ((c['monthlyAmount'] ?? 0) as num).toInt();
+    }
+    return total;
+  }
+
+  // ── Activity query ─────────────────────────────────────────────────────────
+
+  Query<Map<String, dynamic>> _activityQuery() {
+    final now   = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    DateTime start;
+    DateTime end = now.add(const Duration(seconds: 1));
+
+    switch (_selectedFilter) {
+      case 'Today':
+        start = today;
+        break;
+      case 'Yesterday':
+        start = today.subtract(const Duration(days: 1));
+        end   = today;
+        break;
+      default:
+        start = DateTime(2000);
     }
 
-    setState(() => _isJoining = true);
+    return FirebaseFirestore.instance
+        .collection('activity')
+        .where('userId', isEqualTo: _currentUser?.uid)
+        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('timestamp', isLessThan: Timestamp.fromDate(end))
+        .orderBy('timestamp', descending: true);
+  }
 
+  // ── Join committee ─────────────────────────────────────────────────────────
+
+  Future<void> _joinCommittee() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_currentUser == null || _userModel == null) {
+      ErrorHandler.showError(context, 'Please login first');
+      return;
+    }
+    setState(() => _isJoining = true);
     try {
       final code = _joinCodeController.text.trim().toUpperCase();
-
-      final query = await FirebaseFirestore.instance
-          .collection("committees")
-          .where("committeeCode", isEqualTo: code)
+      final q    = await FirebaseFirestore.instance
+          .collection('committees')
+          .where('committeeCode', isEqualTo: code)
           .limit(1)
           .get();
 
-      if (query.docs.isEmpty) {
-        ErrorHandler.showError(context, 'Invalid committee code');
+      if (q.docs.isEmpty) {
+        ErrorHandler.showError(context, 'Committee not found');
         return;
       }
 
-      final doc = query.docs.first;
-      final committeeId = doc.id;
-      final committeeData = doc.data();
+      final doc           = q.docs.first;
+      final committeeId   = doc.id;
+      final data          = doc.data();
+      final startDate     = (data['startDate'] as Timestamp?)?.toDate();
 
-      final startDate = (committeeData['startDate'] as Timestamp?)?.toDate();
       if (startDate != null && startDate.isBefore(DateTime.now())) {
         ErrorHandler.showError(context, 'This committee has already started');
         return;
       }
 
-      final membersMap = Map<String, bool>.from(committeeData['membersMap'] ?? {});
-      final members = List<Map<String, dynamic>>.from(committeeData['members'] ?? []);
-      final membersPayments = Map<String, dynamic>.from(committeeData['membersPayments'] ?? {});
+      final membersMap     = Map<String, bool>.from(data['membersMap'] ?? {});
+      final members        = List<Map<String, dynamic>>.from(data['members'] ?? []);
+      final membersPayments = Map<String, dynamic>.from(data['membersPayments'] ?? {});
 
       if (membersMap.containsKey(_currentUser!.uid)) {
-        ErrorHandler.showError(context, 'You are already a member of this committee');
+        ErrorHandler.showError(context, 'You are already a member');
         return;
       }
-
-      if (members.length >= (committeeData['maxMembers'] ?? 10)) {
+      if (members.length >= (data['maxMembers'] ?? 10)) {
         ErrorHandler.showError(context, 'Committee is full');
         return;
       }
 
       membersMap[_currentUser!.uid] = true;
-
       members.add({
-        "name": _userModel!.name,
-        "phone": _userModel!.phone,
-        "uid": _currentUser!.uid,
-        "email": _userModel!.email,
-        "joinedAt": Timestamp.now(),
-        "status": "active",
+        'name':     _userModel!.name,
+        'phone':    _userModel!.phone,
+        'uid':      _currentUser!.uid,
+        'email':    _userModel!.email,
+        'joinedAt': Timestamp.now(),
+        'status':   'active',
       });
 
       if (!membersPayments.containsKey(_currentUser!.uid)) {
-        final startMonth = (committeeData['startMonth'] as Timestamp?)?.toDate();
-        final endMonth = (committeeData['endMonth'] as Timestamp?)?.toDate();
-
+        final startMonth = (data['startMonth'] as Timestamp?)?.toDate();
+        final endMonth   = (data['endMonth']   as Timestamp?)?.toDate();
         if (startMonth != null && endMonth != null) {
           final payments = <String, String>{};
-          var currentMonth = DateTime(startMonth.year, startMonth.month);
-
-          while (!currentMonth.isAfter(endMonth)) {
-            final key = DateFormat('yyyy-MM').format(currentMonth);
-            payments[key] = "pending";
-            currentMonth = DateTime(currentMonth.year, currentMonth.month + 1);
+          var cur = DateTime(startMonth.year, startMonth.month);
+          while (!cur.isAfter(endMonth)) {
+            payments[DateFormat('yyyy-MM').format(cur)] = 'pending';
+            cur = DateTime(cur.year, cur.month + 1);
           }
-
           membersPayments[_currentUser!.uid] = payments;
         }
       }
 
-      // Update committee document
       await FirebaseFirestore.instance
-          .collection("committees")
+          .collection('committees')
           .doc(committeeId)
           .update({
-        "membersMap": membersMap,
-        "members": members,
-        "membersPayments": membersPayments,
-        "updatedAt": Timestamp.now(),
+        'membersMap':     membersMap,
+        'members':        members,
+        'membersPayments': membersPayments,
+        'updatedAt':      Timestamp.now(),
       });
 
-      // 🔹 Create or update chat document using the provider
       await _committeesProvider.createOrUpdateChatOnJoin(
-        committeeId: committeeId,
-        committeeName: committeeData['name'],
-        committeeImage: committeeData['image'],
-        userId: _currentUser!.uid,
-        userName: _userModel!.name,
+        committeeId:   committeeId,
+        committeeName: data['name'],
+        committeeImage: data['image'],
+        userId:        _currentUser!.uid,
+        userName:      _userModel!.name,
       );
 
-      // Add activity
-      await FirebaseFirestore.instance.collection("activity").add({
-        "userId": _currentUser!.uid,
-        "type": "committee_join",
-        "committeeId": committeeId,
-        "committeeName": committeeData['name'],
-        "timestamp": Timestamp.now(),
-        "details": "Joined committee: ${committeeData['name']}",
+      await FirebaseFirestore.instance.collection('activity').add({
+        'userId':        _currentUser!.uid,
+        'type':          'committee_join',
+        'committeeId':   committeeId,
+        'committeeName': data['name'],
+        'timestamp':     Timestamp.now(),
+        'details':       'Joined committee: ${data['name']}',
       });
 
       await _loadUserCommittees();
-
       if (mounted) {
-        ErrorHandler.showSuccess(
-            context,
-            'Successfully joined ${committeeData['name']}'
-        );
+        ErrorHandler.showSuccess(context, 'Joined ${data['name']}');
+        _joinCodeController.clear();
       }
-
-      _joinCodeController.clear();
-      _formKey.currentState!.reset();
-
     } catch (e) {
-      if (mounted) {
-        ErrorHandler.showError(context, 'Failed to join committee: ${e.toString()}');
-      }
+      if (mounted) ErrorHandler.showError(context, 'Failed to join: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isJoining = false);
-      }
+      if (mounted) setState(() => _isJoining = false);
     }
   }
 
-  void _navigateToScreen(Widget screen) {
+  // ── Add payment routing ────────────────────────────────────────────────────
+
+  void _addPayment() {
+    if (_currentUser == null) {
+      ErrorHandler.showError(context, 'Please login first');
+      return;
+    }
+    if (_userCommittees.isEmpty) {
+      ErrorHandler.showError(context, 'Join a committee first');
+      return;
+    }
+    if (_userCommittees.length == 1) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AddUserPayment(
+            committeeId:   _userCommittees.first['id'],
+            currentUserId: _currentUser!.uid,
+          ),
+        ),
+      );
+      return;
+    }
+    _showCommitteePickerSheet();
+  }
+
+  void _showCommitteePickerSheet() {
+    showModalBottomSheet(
+      context:      context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => Container(
+        decoration: BoxDecoration(
+          color:        AppColors.surfaceDark,
+          borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(AppColors.r20)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color:        AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Select committee',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary)),
+            const SizedBox(height: 12),
+            ..._userCommittees.map((c) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                tileColor:    AppColors.surface2,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppColors.r12)),
+                leading: Container(
+                  width: 38, height: 38,
+                  decoration: BoxDecoration(
+                    color:        AppColors.goldSoft,
+                    borderRadius: BorderRadius.circular(AppColors.r8),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    (c['name'] as String? ?? 'C')[0].toUpperCase(),
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.goldColor),
+                  ),
+                ),
+                title: Text(c['name'] ?? 'Committee',
+                    style: const TextStyle(
+                        fontSize: 14, color: AppColors.textPrimary)),
+                subtitle: Text(
+                    '${c['type'] ?? 'monthly'} · Rs ${c['monthlyAmount'] ?? 0}',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textSecondary)),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AddUserPayment(
+                        committeeId:   c['id'],
+                        currentUserId: _currentUser!.uid,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _push(Widget screen) {
     if (_currentUser == null) {
       ErrorHandler.showError(context, 'Please login first');
       return;
@@ -277,784 +371,703 @@ class _HomeScreenState extends State<HomeScreen>
     Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
   }
 
-  void _navigateToAddPayment() {
-    if (_currentUser == null) {
-      ErrorHandler.showError(context, 'Please login first');
-      return;
-    }
-
-    if (_userCommittees.isEmpty) {
-      ErrorHandler.showError(context, 'You need to join a committee first');
-      return;
-    }
-
-    if (_userCommittees.length == 1) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => AddUserPayment(
-            committeeId: _userCommittees.first['id'],
-            currentUserId: _currentUser!.uid,
-          ),
-        ),
-      );
-      return;
-    }
-
-    _showCommitteeSelectionDialog();
-  }
-
-  void _showCommitteeSelectionDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surfaceDark,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppColors.r16),
-        ),
-        title: const Text(
-          "Select Committee",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: _userCommittees.length,
-            itemBuilder: (context, index) {
-              final committee = _userCommittees[index];
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.surface2,
-                  borderRadius: BorderRadius.circular(AppColors.r12),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: ListTile(
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          AppColors.goldColor,
-                          AppColors.goldColor.withOpacity(0.7),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(AppColors.r12),
-                    ),
-                    child: Center(
-                      child: Text(
-                        committee['type'] == 'daily' ? '📅' : '📆',
-                        style: const TextStyle(fontSize: 18),
-                      ),
-                    ),
-                  ),
-                  title: Text(
-                    committee['name'] ?? 'Unnamed Committee',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  subtitle: Text(
-                    '${committee['type']} committee',
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AddUserPayment(
-                          committeeId: committee['id'],
-                          currentUserId: _currentUser!.uid,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.textSecondary,
-            ),
-            child: const Text("Cancel"),
-          ),
-        ],
-      ),
-    );
-  }
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: _buildAppBar(),
       body: _currentUser == null
-          ? _buildNotLoggedInView()
-          : RefreshIndicator(
-        onRefresh: _initializeUser,
-        color: AppColors.goldColor,
-        backgroundColor: AppColors.surfaceDark,
-        child: _buildMainContent(),
+          ? _buildNotLoggedIn()
+          : SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _init,
+          color:           AppColors.goldColor,
+          backgroundColor: AppColors.surfaceDark,
+          child: _isLoading
+              ? const Center(
+              child: CircularProgressIndicator(
+                  color: AppColors.goldColor))
+              : _buildBody(),
+        ),
       ),
     );
   }
 
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      title: const Text(
-        "Committee Pay",
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-          fontSize: 20,
-        ),
-      ),
-      backgroundColor: AppColors.surfaceDark,
-      elevation: 0,
-      centerTitle: true,
-      actions: [
-        IconButton(
-          icon: Icon(Icons.notifications_outlined, color: AppColors.goldColor),
-          onPressed: _showNotifications,
-        ),
+  Widget _buildBody() {
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(child: _buildTopBar()),
+        // SliverToBoxAdapter(child: _buildStats()),
+        SliverToBoxAdapter(child: _buildJoinSection()),
+        SliverToBoxAdapter(child: _buildQuickActions()),
+        SliverToBoxAdapter(child: _buildActivitySection()),
+        const SliverToBoxAdapter(child: SizedBox(height: 32)),
       ],
     );
   }
 
-  Widget _buildNotLoggedInView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.goldColor, AppColors.goldColor.withOpacity(0.7)],
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.account_circle,
-              size: 60,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Not Logged In',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Please login to access your committees',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pushReplacementNamed(context, '/login');
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.goldColor,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppColors.r12),
-              ),
-            ),
-            child: const Text('Login', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
+  // ── Top bar ────────────────────────────────────────────────────────────────
 
-  Widget _buildMainContent() {
-    if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.goldColor),
-      );
-    }
+  Widget _buildTopBar() {
+    final firstName = _userModel?.name?.split(' ').first ?? 'User';
+    final initial   = firstName[0].toUpperCase();
+    final hour      = DateTime.now().hour;
+    final greeting  = hour < 12 ? 'Good morning' :
+    hour < 17 ? 'Good afternoon' : 'Good evening';
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildWelcomeSection(),
-        const SizedBox(height: 20),
-        _buildJoinCommitteeSection(),
-        const SizedBox(height: 24),
-        _buildQuickActions(),
-        const SizedBox(height: 30),
-        _buildActivitySection(),
-      ],
-    );
-  }
-
-  Widget _buildWelcomeSection() {
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.goldColor,
-            AppColors.goldColor.withOpacity(0.8),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(AppColors.r16),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: const BoxDecoration(
+        color: AppColors.surfaceDark,
+        border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
       ),
       child: Row(
         children: [
           Container(
-            width: 50,
-            height: 50,
+            width: 38, height: 38,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              shape: BoxShape.circle,
+              color:        AppColors.goldColor,
+              shape:        BoxShape.circle,
             ),
-            child: Center(
-              child: Text(
-                _userModel?.name?[0]?.toUpperCase() ?? '?',
+            alignment: Alignment.center,
+            child: Text(initial,
                 style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white)),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Welcome back,',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white.withOpacity(0.8),
-                  ),
-                ),
-                Text(
-                  _userModel?.name?.split(' ')[0] ?? 'User',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
+                Text(firstName,
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textPrimary)),
+                Text(greeting,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textSecondary)),
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              '${_userCommittees.length} Committees',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildJoinCommitteeSection() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceDark,
-        borderRadius: BorderRadius.circular(AppColors.r16),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Join a Committee",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "Enter the committee code provided by your organizer",
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _joinCodeController,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: "Enter committee code",
-                hintStyle: TextStyle(color: AppColors.textSecondary),
-                prefixIcon: Icon(Icons.code, color: AppColors.goldColor),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppColors.r12),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppColors.r12),
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppColors.r12),
-                  borderSide: const BorderSide(color: AppColors.goldColor, width: 2),
-                ),
-                filled: true,
-                fillColor: AppColors.surface2,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please enter a committee code';
-                }
-                if (value.trim().length < 6) {
-                  return 'Code must be at least 6 characters';
-                }
-                return null;
-              },
-              textCapitalization: TextCapitalization.characters,
-              onFieldSubmitted: (_) => joinCommittee(),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isJoining ? null : joinCommittee,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.goldColor,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppColors.r12),
-                  ),
-                ),
-                child: _isJoining
-                    ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
-                    : const Text(
-                  "Join Committee",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuickActions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
-          child: Text(
-            "Quick Actions",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-        ),
-        GridView(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.1,
-          ),
-          children: [
-            _QuickActionCard(
-              title: "Daily\nCommittee",
-              icon: Icons.add,
-              color: AppColors.goldColor,
-              onTap: () => _navigateToScreen(
-                DailyCommitteeScreen(adminId: _currentUser!.uid),
-              ),
-            ),
-            _QuickActionCard(
-              title: "Monthly\nCommittee",
-              icon: Icons.add_box_outlined,
-              color: AppColors.orange,
-              onTap: () => _navigateToScreen(
-                MonthlyCommitteeScreen(adminId: _currentUser!.uid),
-              ),
-            ),
-            _QuickActionCard(
-              title: "Assign\nMonth",
-              icon: Icons.add_task,
-              color: AppColors.green,
-              onTap: () => _navigateToScreen(
-                MemberAssignmentHome(),
-              ),
-            ),
-            _QuickActionCard(
-              title: "My\nCommittees",
-              icon: Icons.group,
-              color: AppColors.purple,
-              onTap: () => _navigateToScreen(
-                MyCommitteesScreen(userId: _currentUser!.uid),
-              ),
-            ),
-          ],
-        ),
-        if (_userCommittees.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.goldSoft,
-              borderRadius: BorderRadius.circular(AppColors.r12),
-              border: Border.all(color: AppColors.goldColor.withOpacity(0.3)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, color: AppColors.goldColor, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'You are in ${_userCommittees.length} active ${_userCommittees.length == 1 ? 'committee' : 'committees'}',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildActivitySection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "Recent Activity",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceDark,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: DropdownButton<String>(
-                  value: _selectedFilter,
-                  dropdownColor: AppColors.surfaceDark,
-                  underline: const SizedBox(),
-                  icon: Icon(Icons.arrow_drop_down, color: AppColors.goldColor),
-                  style: TextStyle(color: AppColors.textSecondary),
-                  items: ["Today", "Yesterday", "All"].map((filter) {
-                    return DropdownMenuItem(
-                      value: filter,
-                      child: Text(
-                        filter,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    if (value != null && mounted) {
-                      setState(() => _selectedFilter = value);
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        _buildActivityStream(),
-      ],
-    );
-  }
-
-  Widget _buildActivityStream() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: getActivityQuery().snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              children: [
-                Icon(Icons.error_outline, color: AppColors.red, size: 40),
-                const SizedBox(height: 8),
-                Text(
-                  'Error loading activities',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-          );
-        }
-
-        if (!snapshot.hasData) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: CircularProgressIndicator(color: AppColors.goldColor),
-            ),
-          );
-        }
-
-        final docs = snapshot.data!.docs;
-
-        if (docs.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(32),
-            alignment: Alignment.center,
-            child: Column(
-              children: [
-                Icon(
-                  Icons.hourglass_empty,
-                  size: 48,
-                  color: AppColors.textSecondary,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  "No activity found",
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return ListView.separated(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: docs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final activity = docs[index].data() as Map<String, dynamic>;
-            final timestamp = (activity["timestamp"] as Timestamp).toDate();
-            final type = activity["type"] ?? "unknown";
-
-            IconData iconData;
-            Color iconColor;
-
-            switch (type) {
-              case "payment":
-                iconData = Icons.payment;
-                iconColor = AppColors.green;
-                break;
-              case "committee_join":
-                iconData = Icons.group_add;
-                iconColor = AppColors.blue;
-                break;
-              case "committee_create":
-                iconData = Icons.add_circle;
-                iconColor = AppColors.orange;
-                break;
-              default:
-                iconData = Icons.notifications;
-                iconColor = AppColors.goldColor;
-            }
-
-            return Container(
-              padding: const EdgeInsets.all(12),
+          IconButton(
+            onPressed: _showNotifications,
+            padding:  EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+            icon: Container(
+              width: 38, height: 38,
               decoration: BoxDecoration(
-                color: AppColors.surfaceDark,
-                borderRadius: BorderRadius.circular(AppColors.r12),
-                border: Border.all(color: AppColors.border),
+                color:        AppColors.surface2,
+                shape:        BoxShape.circle,
+                border:       Border.all(color: AppColors.border, width: 0.5),
               ),
-              child: Row(
+              child: const Icon(Icons.notifications_outlined,
+                  size: 18, color: AppColors.goldColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Stats row ──────────────────────────────────────────────────────────────
+
+  // Widget _buildStats() {
+  //   return Padding(
+  //     padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+  //     child: Row(
+  //       children: [
+  //         _StatCard(
+  //           icon:  Icons.group_outlined,
+  //           value: '${_userCommittees.length}',
+  //           label: 'Committees',
+  //         ),
+  //         const SizedBox(width: 10),
+  //         _StatCard(
+  //           icon:  Icons.payments_outlined,
+  //           value: _formatAmount(_thisMonthTotal),
+  //           label: 'This month',
+  //         ),
+  //         const SizedBox(width: 10),
+  //         _StatCard(
+  //           icon:  Icons.check_circle_outline,
+  //           value: '$_totalPaid/${_userCommittees.length}',
+  //           label: 'Paid',
+  //           highlight: true,
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
+
+  // ── Join section ───────────────────────────────────────────────────────────
+
+  Widget _buildJoinSection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color:        AppColors.surfaceDark,
+          borderRadius: BorderRadius.circular(AppColors.r16),
+          border:       Border.all(color: AppColors.border, width: 0.5),
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Join a committee',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textPrimary)),
+              const SizedBox(height: 3),
+              const Text('Enter the code shared by your organizer',
+                  style: TextStyle(
+                      fontSize: 12, color: AppColors.textSecondary)),
+              const SizedBox(height: 12),
+              Row(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: iconColor.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(iconData, color: iconColor, size: 20),
-                  ),
-                  const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          activity["details"] ?? "Activity",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white,
-                            fontSize: 13,
-                          ),
+                    child: TextFormField(
+                      controller:        _joinCodeController,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary, fontSize: 14),
+                      textCapitalization: TextCapitalization.characters,
+                      onFieldSubmitted:  (_) => _joinCommittee(),
+                      decoration: InputDecoration(
+                        hintText:  'e.g. KMT-7823',
+                        hintStyle: const TextStyle(
+                            color: AppColors.textSecondary, fontSize: 13),
+                        prefixIcon: const Icon(Icons.tag,
+                            size: 18, color: AppColors.goldColor),
+                        filled:     true,
+                        fillColor:  AppColors.surface2,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppColors.r12),
+                          borderSide: const BorderSide(
+                              color: AppColors.border, width: 0.5),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _formatTimestamp(timestamp),
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 11,
-                          ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppColors.r12),
+                          borderSide: const BorderSide(
+                              color: AppColors.border, width: 0.5),
                         ),
-                      ],
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppColors.r12),
+                          borderSide: const BorderSide(
+                              color: AppColors.goldColor, width: 1.5),
+                        ),
+                        errorStyle: const TextStyle(fontSize: 0, height: 0),
+                      ),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) return '';
+                        if (v.trim().length < 6) return '';
+                        return null;
+                      },
                     ),
                   ),
-                  Text(
-                    DateFormat('hh:mm a').format(timestamp),
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 11,
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 44,
+                    child: ElevatedButton(
+                      onPressed: _isJoining ? null : _joinCommittee,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.goldColor,
+                        foregroundColor: AppColors.bg,
+                        elevation:       0,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        shape: RoundedRectangleBorder(
+                            borderRadius:
+                            BorderRadius.circular(AppColors.r12)),
+                        textStyle: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                      child: _isJoining
+                          ? const SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                          : const Text('Join'),
                     ),
                   ),
                 ],
               ),
-            );
-          },
-        );
-      },
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final difference = now.difference(timestamp);
+  // ── Quick actions ──────────────────────────────────────────────────────────
 
-    if (difference.inDays == 0) {
-      return 'Today';
-    } else if (difference.inDays == 1) {
-      return 'Yesterday';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays} days ago';
-    } else {
-      return DateFormat('MMM dd, yyyy').format(timestamp);
-    }
+  Widget _buildQuickActions() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionLabel(label: 'QUICK ACTIONS'),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _ActionTile(
+                  icon:       Icons.calendar_today_outlined,
+                  iconColor:  AppColors.green,
+                  label:      'Daily committee',
+                  sublabel:   'Collect daily',
+                  onTap: () => _push(
+                      DailyCommitteeScreen(adminId: _currentUser!.uid)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ActionTile(
+                  icon:       Icons.calendar_month_outlined,
+                  iconColor:  AppColors.purple,
+                  label:      'Monthly committee',
+                  sublabel:   'Collect monthly',
+                  onTap: () => _push(
+                      MonthlyCommitteeScreen(adminId: _currentUser!.uid)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _ActionTile(
+                  icon:      Icons.add_card_outlined,
+                  iconColor: AppColors.goldColor,
+                  label:     'Add payment',
+                  sublabel:  'Record a payment',
+                  onTap:     _addPayment,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ActionTile(
+                  icon:      Icons.event_available_outlined,
+                  iconColor: AppColors.blue,
+                  label:     'Assign months',
+                  sublabel:  'Set turn order',
+                  onTap:     () => _push(MemberAssignmentHome()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _ActionTile(
+            icon:      Icons.group_outlined,
+            iconColor: AppColors.orange,
+            label:     'My committees',
+            sublabel:  'View all ${_userCommittees.length} committees',
+            fullWidth: true,
+            onTap:     () => _push(
+                MyCommitteesScreen(userId: _currentUser!.uid)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Activity section ───────────────────────────────────────────────────────
+
+  Widget _buildActivitySection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const _SectionLabel(label: 'RECENT ACTIVITY'),
+              const Spacer(),
+              // Filter pills
+              ...['Today', 'Yesterday', 'All'].map((f) => GestureDetector(
+                onTap: () => setState(() => _selectedFilter = f),
+                child: Container(
+                  margin: const EdgeInsets.only(left: 4),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _selectedFilter == f
+                        ? AppColors.goldColor
+                        : AppColors.surface2,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _selectedFilter == f
+                          ? AppColors.goldColor
+                          : AppColors.border,
+                      width: 0.5,
+                    ),
+                  ),
+                  child: Text(f,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: _selectedFilter == f
+                              ? AppColors.bg
+                              : AppColors.textSecondary)),
+                ),
+              )),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color:        AppColors.surfaceDark,
+              borderRadius: BorderRadius.circular(AppColors.r16),
+              border:       Border.all(color: AppColors.border, width: 0.5),
+            ),
+            clipBehavior: Clip.hardEdge,
+            child: StreamBuilder<QuerySnapshot>(
+              stream:  _activityQuery().snapshots(),
+              builder: (context, snap) {
+                if (snap.hasError) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                      child: Text('Could not load activity',
+                          style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 13)),
+                    ),
+                  );
+                }
+                if (!snap.hasData) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                        child: CircularProgressIndicator(
+                            color: AppColors.goldColor,
+                            strokeWidth: 2)),
+                  );
+                }
+                final docs = snap.data!.docs;
+                if (docs.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(
+                        vertical: 40, horizontal: 16),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.inbox_outlined,
+                              size: 36, color: AppColors.textSecondary),
+                          SizedBox(height: 10),
+                          Text('No activity yet',
+                              style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                return ListView.separated(
+                  shrinkWrap:    true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount:     docs.length,
+                  separatorBuilder: (_, __) => const Divider(
+                      height: 0.5,
+                      thickness: 0.5,
+                      color: AppColors.border),
+                  itemBuilder: (context, i) {
+                    final act = docs[i].data() as Map<String, dynamic>;
+                    final ts  = (act['timestamp'] as Timestamp).toDate();
+                    return _ActivityRow(activity: act, timestamp: ts);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Not logged in ──────────────────────────────────────────────────────────
+
+  Widget _buildNotLoggedIn() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 72, height: 72,
+              decoration: const BoxDecoration(
+                  color: AppColors.goldSoft, shape: BoxShape.circle),
+              child: const Icon(Icons.account_circle_outlined,
+                  size: 40, color: AppColors.goldColor),
+            ),
+            const SizedBox(height: 20),
+            const Text('Not logged in',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary)),
+            const SizedBox(height: 8),
+            const Text('Please login to access your committees',
+                style: TextStyle(
+                    color: AppColors.textSecondary, fontSize: 13),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () =>
+                  Navigator.pushReplacementNamed(context, '/login'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.goldColor,
+                foregroundColor: AppColors.bg,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 32, vertical: 12),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppColors.r12)),
+              ),
+              child: const Text('Login',
+                  style: TextStyle(fontWeight: FontWeight.w500)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showNotifications() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text(
-          'Notifications coming soon!',
-          style: TextStyle(color: Colors.white),
-        ),
+        content: const Text('Notifications coming soon'),
         backgroundColor: AppColors.goldColor,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppColors.r12)),
+      ),
+    );
+  }
+}
+
+// ── Reusable sub-widgets ───────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(label,
+        style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textSecondary,
+            letterSpacing: .4));
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final String   value;
+  final String   label;
+  final bool     highlight;
+
+  const _StatCard({
+    required this.icon,
+    required this.value,
+    required this.label,
+    this.highlight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceDark,
           borderRadius: BorderRadius.circular(AppColors.r12),
+          border: Border.all(
+            color: highlight
+                ? AppColors.goldColor.withOpacity(.4)
+                : AppColors.border,
+            width: highlight ? 1 : 0.5,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon,
+                size:  18,
+                color: highlight
+                    ? AppColors.goldColor
+                    : AppColors.textSecondary),
+            const SizedBox(height: 8),
+            Text(value,
+                style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 2),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textSecondary)),
+          ],
         ),
       ),
     );
   }
 }
 
-class _QuickActionCard extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Color color;
+class _ActionTile extends StatelessWidget {
+  final IconData     icon;
+  final Color        iconColor;
+  final String       label;
+  final String       sublabel;
   final VoidCallback onTap;
+  final bool         fullWidth;
 
-  const _QuickActionCard({
-    required this.title,
+  const _ActionTile({
     required this.icon,
-    required this.color,
+    required this.iconColor,
+    required this.label,
+    required this.sublabel,
     required this.onTap,
+    this.fullWidth = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppColors.r16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surfaceDark,
-          borderRadius: BorderRadius.circular(AppColors.r16),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 28, color: color),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                title,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppColors.r12),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color:        AppColors.surfaceDark,
+            borderRadius: BorderRadius.circular(AppColors.r12),
+            border:       Border.all(color: AppColors.border, width: 0.5),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 30, height: 30,
+                decoration: BoxDecoration(
+                  color:        iconColor.withOpacity(.12),
+                  borderRadius: BorderRadius.circular(AppColors.r8),
                 ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                alignment: Alignment.center,
+                child: Icon(icon, size: 15, color: iconColor),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label,
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textPrimary)),
+                    const SizedBox(height: 2),
+                    Text(sublabel,
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textSecondary)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right,
+                  size: 18, color: AppColors.textSecondary),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _ActivityRow extends StatelessWidget {
+  final Map<String, dynamic> activity;
+  final DateTime             timestamp;
+
+  const _ActivityRow({required this.activity, required this.timestamp});
+
+  IconData _icon(String type) {
+    switch (type) {
+      case 'payment':           return Icons.payments_outlined;
+      case 'committee_join':    return Icons.group_add_outlined;
+      case 'committee_create':  return Icons.add_circle_outline;
+      default:                  return Icons.notifications_outlined;
+    }
+  }
+
+  Color _color(String type) {
+    switch (type) {
+      case 'payment':          return AppColors.green;
+      case 'committee_join':   return AppColors.blue;
+      case 'committee_create': return AppColors.orange;
+      default:                 return AppColors.goldColor;
+    }
+  }
+
+  String _timeText() {
+    final now  = DateTime.now();
+    final diff = now.difference(timestamp);
+    if (diff.inDays == 0) return DateFormat('h:mm a').format(timestamp);
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7)  return '${diff.inDays}d ago';
+    return DateFormat('MMM d').format(timestamp);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final type = activity['type'] ?? 'unknown';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(
+              color:  _color(type).withOpacity(.12),
+              shape:  BoxShape.circle,
+            ),
+            child: Icon(_icon(type), size: 18, color: _color(type)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(activity['details'] ?? 'Activity',
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textPrimary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(_timeText(),
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.textSecondary)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

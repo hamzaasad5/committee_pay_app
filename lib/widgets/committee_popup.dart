@@ -241,7 +241,7 @@ class CreateCommitteePopup extends StatelessWidget {
                 child: const Icon(
                   Icons.arrow_forward_ios,
                   size: 16,
-                  color: AppColors.primaryColor,
+                  color: AppColors.goldColor,
                 ),
               ),
             ],

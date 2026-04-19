@@ -114,7 +114,7 @@ class _OnboardingScreen1State extends State<OnboardingScreen1>
                         child: ShaderMask(
                           shaderCallback: (bounds) => LinearGradient(
                             colors: [
-                              AppColors.primaryColor,
+                              AppColors.goldColor,
                               AppColors.secondaryColor,
                             ],
                             begin: Alignment.topLeft,
@@ -159,13 +159,13 @@ class _OnboardingScreen1State extends State<OnboardingScreen1>
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                AppColors.primaryColor.withOpacity(0.05),
+                                AppColors.goldColor.withOpacity(0.05),
                                 AppColors.secondaryColor.withOpacity(0.02),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(AppColors.borderRadiusLarge),
                             border: Border.all(
-                              color: AppColors.primaryColor.withOpacity(0.1),
+                              color: AppColors.goldColor.withOpacity(0.1),
                             ),
                           ),
                           child: Column(
@@ -234,7 +234,7 @@ class _OnboardingScreen1State extends State<OnboardingScreen1>
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [AppColors.primaryColor, AppColors.secondaryColor],
+              colors: [AppColors.goldColor, AppColors.secondaryColor],
             ),
             shape: BoxShape.circle,
           ),

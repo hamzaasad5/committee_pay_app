@@ -182,7 +182,7 @@ class _SignInScreenState extends State<SignInScreen> {
               colors: [
                 AppColors.goldColor,
                 AppColors.goldColor.withOpacity(0.8),
-                AppColors.primaryColor,
+                AppColors.goldColor,
               ],
             ),
             shape: BoxShape.circle,

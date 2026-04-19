@@ -141,13 +141,13 @@ class _OnboardingScreen3State extends State<OnboardingScreen3>
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [
-                              AppColors.primaryColor.withOpacity(0.05),
+                              AppColors.goldColor.withOpacity(0.05),
                               AppColors.secondaryColor.withOpacity(0.02),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(AppColors.borderRadiusLarge),
                           border: Border.all(
-                            color: AppColors.primaryColor.withOpacity(0.1),
+                            color: AppColors.goldColor.withOpacity(0.1),
                           ),
                         ),
                         child: GridView.count(
@@ -187,7 +187,7 @@ class _OnboardingScreen3State extends State<OnboardingScreen3>
                       Container(
                         padding: const EdgeInsets.all(AppColors.spacingMedium),
                         decoration: BoxDecoration(
-                          color: AppColors.primaryColor.withOpacity(0.05),
+                          color: AppColors.goldColor.withOpacity(0.05),
                           borderRadius: BorderRadius.circular(AppColors.borderRadiusMedium),
                         ),
                         child: Row(
@@ -222,7 +222,7 @@ class _OnboardingScreen3State extends State<OnboardingScreen3>
                             ),
                             Icon(
                               Icons.format_quote,
-                              color: AppColors.primaryColor,
+                              color: AppColors.goldColor,
                               size: 20,
                             ),
                           ],
@@ -243,7 +243,7 @@ class _OnboardingScreen3State extends State<OnboardingScreen3>
                     child: OutlinedButton(
                       onPressed: widget.onBack,
                       style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: AppColors.primaryColor),
+                        side: BorderSide(color: AppColors.goldColor),
                         minimumSize: const Size(0, 50),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(AppColors.borderRadiusMedium),
@@ -286,9 +286,9 @@ class _OnboardingScreen3State extends State<OnboardingScreen3>
     return ShaderMask(
       shaderCallback: (bounds) => LinearGradient(
         colors: [
-          AppColors.primaryColor,
+          AppColors.goldColor,
           AppColors.secondaryColor,
-          AppColors.primaryColor,
+          AppColors.goldColor,
         ],
         stops: const [0.0, 0.5, 1.0],
         begin: Alignment(-1.0, 0),
@@ -322,7 +322,7 @@ class _OnboardingScreen3State extends State<OnboardingScreen3>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 30, color: AppColors.primaryColor),
+          Icon(icon, size: 30, color: AppColors.goldColor),
           const SizedBox(height: AppColors.spacingSmall),
           Text(
             title,

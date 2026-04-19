@@ -170,7 +170,7 @@ class _SignupScreenState extends State<SignupScreen> {
               colors: [
                 AppColors.goldColor,
                 AppColors.goldColor.withOpacity(0.8),
-                AppColors.primaryColor,
+                AppColors.goldColor,
               ],
             ),
             shape: BoxShape.circle,
@@ -215,7 +215,7 @@ class _SignupScreenState extends State<SignupScreen> {
               height: 3,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [AppColors.goldColor, AppColors.primaryColor],
+                  colors: [AppColors.goldColor, AppColors.goldColor],
                 ),
                 borderRadius: BorderRadius.circular(2),
               ),
@@ -240,7 +240,7 @@ class _SignupScreenState extends State<SignupScreen> {
               end: Alignment.bottomRight,
               colors: [
                 AppColors.goldColor,
-                AppColors.primaryColor,
+                AppColors.goldColor,
                 AppColors.secondary,
               ],
             ),
